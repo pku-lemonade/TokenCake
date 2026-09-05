@@ -1,0 +1,1512 @@
+{
+  "captured_at": "2026-09-05T12:24:28.527488+00:00",
+  "dataset": {
+    "path": "/root/TokenCake/vllm_agent/dataset/agentcodeclean_new.json",
+    "sha256": "730f251343121339d87313895add089f2520971319bdc92c282d5497a6425ca0",
+    "size_bytes": 27183848
+  },
+  "hardware": {
+    "gpus": [
+      {
+        "index": "0",
+        "memory.total [MiB]": "81920",
+        "name": "NVIDIA A800-SXM4-80GB",
+        "pci.bus_id": "00000000:4D:00.0",
+        "uuid": "GPU-dfe6761a-23f4-c34c-9c03-01da02020e5f"
+      },
+      {
+        "index": "1",
+        "memory.total [MiB]": "81920",
+        "name": "NVIDIA A800-SXM4-80GB",
+        "pci.bus_id": "00000000:CA:00.0",
+        "uuid": "GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087"
+      }
+    ],
+    "numa_cpu_sets": {
+      "0": "0-35,72-107",
+      "1": "36-71,108-143"
+    }
+  },
+  "model": {
+    "files": [
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/config.json",
+        "sha256": "0f2085dbbe2ee251bd6a6a0797d84a6ce34436044d629aa3cba793b43d311a9e",
+        "size_bytes": 663
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/generation_config.json",
+        "sha256": "ea35dfb6fc5051b01114f9b995820d55dab01ed33ee490f6378b442af82c09f9",
+        "size_bytes": 242
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/merges.txt",
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+        "size_bytes": 1671839
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00001-of-00008.safetensors",
+        "sha256": "b477be7572f0ab3ae3cbba38d508cc33e70600b2045669c4ad848051c3432094",
+        "size_bytes": 3885154816
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00002-of-00008.safetensors",
+        "sha256": "eb356aacae443e30f52712b1e98fadf206976365e2f5ee886321b0bb38c7cea8",
+        "size_bytes": 3995327992
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00003-of-00008.safetensors",
+        "sha256": "cee9dbdf738ce61adb21c70ad5c5585747caaab6457c9ffc3bfa20d73127c2c6",
+        "size_bytes": 3995328080
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00004-of-00008.safetensors",
+        "sha256": "b1201a6edcac8ef96a37040524fe37a5a84e446513ed40491e764a37302385fa",
+        "size_bytes": 3995338432
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00005-of-00008.safetensors",
+        "sha256": "fbbda3cdee31895d0c57d617449af5579d219df34f3d63f7a23acbfe7fb0a647",
+        "size_bytes": 3979624824
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00006-of-00008.safetensors",
+        "sha256": "f7ac652aa101717c97cfeccf5109985cca5b04529b57d3f4d2ec7a802266296b",
+        "size_bytes": 3995328080
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00007-of-00008.safetensors",
+        "sha256": "e9115e615b575acb6e8b3a06524b32cbf7f680f07517125e4334f62c3f4acb0d",
+        "size_bytes": 3995328080
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model-00008-of-00008.safetensors",
+        "sha256": "a77f603d8368749c19d3ac9cf2a300e476edcc794ea41af8e473ee12935eadb8",
+        "size_bytes": 1698703696
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/model.safetensors.index.json",
+        "sha256": "46627f7a9e851d9cede6a7a4c49999082148ced9c22d2b9cfaaa5ba8b65dc68f",
+        "size_bytes": 47472
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/tokenizer.json",
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "size_bytes": 7031645
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/tokenizer_config.json",
+        "sha256": "5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583",
+        "size_bytes": 7305
+      },
+      {
+        "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct/vocab.json",
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "size_bytes": 2776833
+      }
+    ],
+    "path": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct"
+  },
+  "mooncake_wheel": {
+    "path": "/root/autodl-tmp/mooncake-api-check.TdlTNm/mooncake_transfer_engine-0.3.8-cp312-cp312-manylinux_2_17_x86_64.manylinux_2_35_x86_64.whl",
+    "sha256": "37354b69e87f84c3c0162839519041b64b39714adf52bf44eeda37a929a12962",
+    "size_bytes": 36415425
+  },
+  "official_baseline_commit": "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af",
+  "original_environment": {
+    "mutation_policy": "read-only; repo-local uv environments own overrides",
+    "packages": [
+      {
+        "name": "absl-py",
+        "version": "2.3.0"
+      },
+      {
+        "name": "agent-detector",
+        "version": "2.0.0"
+      },
+      {
+        "name": "aiohappyeyeballs",
+        "version": "2.6.1"
+      },
+      {
+        "name": "aiohttp",
+        "version": "3.14.3"
+      },
+      {
+        "name": "aiosignal",
+        "version": "1.4.0"
+      },
+      {
+        "name": "airportsdata",
+        "version": "20250224"
+      },
+      {
+        "name": "annotated-doc",
+        "version": "0.0.5"
+      },
+      {
+        "name": "annotated-types",
+        "version": "0.7.0"
+      },
+      {
+        "name": "anthropic",
+        "version": "1.3.0"
+      },
+      {
+        "name": "anyio",
+        "version": "4.15.0"
+      },
+      {
+        "name": "apache-tvm-ffi",
+        "version": "0.1.9"
+      },
+      {
+        "name": "astor",
+        "version": "0.8.1"
+      },
+      {
+        "name": "asttokens",
+        "version": "3.0.0"
+      },
+      {
+        "name": "attrs",
+        "version": "25.3.0"
+      },
+      {
+        "name": "blake3",
+        "version": "1.0.4"
+      },
+      {
+        "name": "cachetools",
+        "version": "5.5.2"
+      },
+      {
+        "name": "cbor2",
+        "version": "6.1.4"
+      },
+      {
+        "name": "certifi",
+        "version": "2025.4.26"
+      },
+      {
+        "name": "cfgv",
+        "version": "3.4.0"
+      },
+      {
+        "name": "charset-normalizer",
+        "version": "3.4.2"
+      },
+      {
+        "name": "click",
+        "version": "8.1.8"
+      },
+      {
+        "name": "cloudpickle",
+        "version": "3.1.1"
+      },
+      {
+        "name": "comm",
+        "version": "0.2.3"
+      },
+      {
+        "name": "compressed-tensors",
+        "version": "0.15.0.1"
+      },
+      {
+        "name": "conda-pack",
+        "version": "0.9.1"
+      },
+      {
+        "name": "contourpy",
+        "version": "1.3.2"
+      },
+      {
+        "name": "cuda-bindings",
+        "version": "13.3.1"
+      },
+      {
+        "name": "cuda-core",
+        "version": "1.0.1"
+      },
+      {
+        "name": "cuda-pathfinder",
+        "version": "1.8.1"
+      },
+      {
+        "name": "cuda-python",
+        "version": "13.3.1"
+      },
+      {
+        "name": "cuda-tile",
+        "version": "1.5.0"
+      },
+      {
+        "name": "cuda-toolkit",
+        "version": "13.0.2"
+      },
+      {
+        "name": "cupy-cuda12x",
+        "version": "13.4.1"
+      },
+      {
+        "name": "cycler",
+        "version": "0.12.1"
+      },
+      {
+        "name": "datasets",
+        "version": "3.6.0"
+      },
+      {
+        "name": "debugpy",
+        "version": "1.8.11"
+      },
+      {
+        "name": "decorator",
+        "version": "5.2.1"
+      },
+      {
+        "name": "deprecated",
+        "version": "1.2.18"
+      },
+      {
+        "name": "depyf",
+        "version": "0.20.0"
+      },
+      {
+        "name": "detect-installer",
+        "version": "0.2.1"
+      },
+      {
+        "name": "dill",
+        "version": "0.3.8"
+      },
+      {
+        "name": "diskcache",
+        "version": "5.6.3"
+      },
+      {
+        "name": "distlib",
+        "version": "0.3.9"
+      },
+      {
+        "name": "distro",
+        "version": "1.9.0"
+      },
+      {
+        "name": "dnspython",
+        "version": "2.7.0"
+      },
+      {
+        "name": "docstring-parser",
+        "version": "0.18.0"
+      },
+      {
+        "name": "einops",
+        "version": "0.8.1"
+      },
+      {
+        "name": "email-validator",
+        "version": "2.2.0"
+      },
+      {
+        "name": "exceptiongroup",
+        "version": "1.3.0"
+      },
+      {
+        "name": "executing",
+        "version": "2.2.0"
+      },
+      {
+        "name": "fastapi",
+        "version": "0.128.0"
+      },
+      {
+        "name": "fastapi-cli",
+        "version": "0.0.32"
+      },
+      {
+        "name": "fastapi-cloud-cli",
+        "version": "0.25.0"
+      },
+      {
+        "name": "fastar",
+        "version": "0.12.0"
+      },
+      {
+        "name": "fastrlock",
+        "version": "0.8.3"
+      },
+      {
+        "name": "fastsafetensors",
+        "version": "0.3.3"
+      },
+      {
+        "name": "filelock",
+        "version": "3.18.0"
+      },
+      {
+        "name": "flashinfer-cubin",
+        "version": "0.6.11.post2"
+      },
+      {
+        "name": "flashinfer-python",
+        "version": "0.6.11.post2"
+      },
+      {
+        "name": "fonttools",
+        "version": "4.57.0"
+      },
+      {
+        "name": "frozenlist",
+        "version": "1.6.0"
+      },
+      {
+        "name": "fsspec",
+        "version": "2025.3.0"
+      },
+      {
+        "name": "gguf",
+        "version": "0.19.0"
+      },
+      {
+        "name": "googleapis-common-protos",
+        "version": "1.75.3"
+      },
+      {
+        "name": "grpcio",
+        "version": "1.71.0"
+      },
+      {
+        "name": "h11",
+        "version": "0.16.0"
+      },
+      {
+        "name": "hf-xet",
+        "version": "1.6.0"
+      },
+      {
+        "name": "httpcore",
+        "version": "1.0.9"
+      },
+      {
+        "name": "httpcore2",
+        "version": "2.12.0"
+      },
+      {
+        "name": "httptools",
+        "version": "0.6.4"
+      },
+      {
+        "name": "httpx",
+        "version": "0.28.1"
+      },
+      {
+        "name": "httpx-sse",
+        "version": "0.4.0"
+      },
+      {
+        "name": "httpx2",
+        "version": "2.12.0"
+      },
+      {
+        "name": "huggingface-hub",
+        "version": "0.36.2"
+      },
+      {
+        "name": "humming-kernels",
+        "version": "0.1.2"
+      },
+      {
+        "name": "identify",
+        "version": "2.6.12"
+      },
+      {
+        "name": "idna",
+        "version": "3.19"
+      },
+      {
+        "name": "ijson",
+        "version": "3.5.1"
+      },
+      {
+        "name": "importlib-metadata",
+        "version": "8.7.0"
+      },
+      {
+        "name": "iniconfig",
+        "version": "2.1.0"
+      },
+      {
+        "name": "interegular",
+        "version": "0.3.3"
+      },
+      {
+        "name": "ipykernel",
+        "version": "6.30.1"
+      },
+      {
+        "name": "ipython",
+        "version": "9.4.0"
+      },
+      {
+        "name": "ipython-pygments-lexers",
+        "version": "1.1.1"
+      },
+      {
+        "name": "jedi",
+        "version": "0.19.2"
+      },
+      {
+        "name": "jinja2",
+        "version": "3.1.6"
+      },
+      {
+        "name": "jiter",
+        "version": "0.16.0"
+      },
+      {
+        "name": "jmespath",
+        "version": "1.1.0"
+      },
+      {
+        "name": "jsonschema",
+        "version": "4.23.0"
+      },
+      {
+        "name": "jsonschema-specifications",
+        "version": "2025.4.1"
+      },
+      {
+        "name": "jupyter-client",
+        "version": "8.6.3"
+      },
+      {
+        "name": "jupyter-core",
+        "version": "5.8.1"
+      },
+      {
+        "name": "kiwisolver",
+        "version": "1.4.8"
+      },
+      {
+        "name": "lark",
+        "version": "1.2.2"
+      },
+      {
+        "name": "llguidance",
+        "version": "1.7.6"
+      },
+      {
+        "name": "llvmlite",
+        "version": "0.47.0"
+      },
+      {
+        "name": "lm-format-enforcer",
+        "version": "0.11.3"
+      },
+      {
+        "name": "loguru",
+        "version": "0.7.3"
+      },
+      {
+        "name": "markdown",
+        "version": "3.8.1"
+      },
+      {
+        "name": "markdown-it-py",
+        "version": "3.0.0"
+      },
+      {
+        "name": "markupsafe",
+        "version": "3.0.2"
+      },
+      {
+        "name": "matplotlib",
+        "version": "3.10.1"
+      },
+      {
+        "name": "matplotlib-inline",
+        "version": "0.1.7"
+      },
+      {
+        "name": "mcp",
+        "version": "1.9.1"
+      },
+      {
+        "name": "mdurl",
+        "version": "0.1.2"
+      },
+      {
+        "name": "mistral-common",
+        "version": "1.11.7"
+      },
+      {
+        "name": "ml-dtypes",
+        "version": "0.6.0"
+      },
+      {
+        "name": "model-hosting-container-standards",
+        "version": "0.1.16"
+      },
+      {
+        "name": "mooncake-transfer-engine",
+        "version": "0.3.8"
+      },
+      {
+        "name": "mpmath",
+        "version": "1.3.0"
+      },
+      {
+        "name": "msgpack",
+        "version": "1.1.0"
+      },
+      {
+        "name": "msgspec",
+        "version": "0.19.0"
+      },
+      {
+        "name": "multidict",
+        "version": "6.4.3"
+      },
+      {
+        "name": "multiprocess",
+        "version": "0.70.16"
+      },
+      {
+        "name": "mvp",
+        "version": "0.9.3"
+      },
+      {
+        "name": "nest-asyncio",
+        "version": "1.6.0"
+      },
+      {
+        "name": "networkx",
+        "version": "3.4.2"
+      },
+      {
+        "name": "ninja",
+        "version": "1.11.1.4"
+      },
+      {
+        "name": "nodeenv",
+        "version": "1.9.1"
+      },
+      {
+        "name": "numba",
+        "version": "0.65.0"
+      },
+      {
+        "name": "numpy",
+        "version": "2.2.5"
+      },
+      {
+        "name": "nvidia-cublas",
+        "version": "13.1.0.3"
+      },
+      {
+        "name": "nvidia-cublas-cu12",
+        "version": "12.4.5.8"
+      },
+      {
+        "name": "nvidia-cuda-cccl",
+        "version": "13.3.3.4.1"
+      },
+      {
+        "name": "nvidia-cuda-crt",
+        "version": "13.3.73"
+      },
+      {
+        "name": "nvidia-cuda-cupti",
+        "version": "13.0.85"
+      },
+      {
+        "name": "nvidia-cuda-cupti-cu12",
+        "version": "12.4.127"
+      },
+      {
+        "name": "nvidia-cuda-nvcc",
+        "version": "13.3.73"
+      },
+      {
+        "name": "nvidia-cuda-nvrtc",
+        "version": "13.0.88"
+      },
+      {
+        "name": "nvidia-cuda-nvrtc-cu12",
+        "version": "12.4.127"
+      },
+      {
+        "name": "nvidia-cuda-runtime",
+        "version": "13.0.96"
+      },
+      {
+        "name": "nvidia-cuda-runtime-cu12",
+        "version": "12.4.127"
+      },
+      {
+        "name": "nvidia-cudnn-cu12",
+        "version": "9.1.0.70"
+      },
+      {
+        "name": "nvidia-cudnn-cu13",
+        "version": "9.19.0.56"
+      },
+      {
+        "name": "nvidia-cudnn-frontend",
+        "version": "1.18.0"
+      },
+      {
+        "name": "nvidia-cufft",
+        "version": "12.0.0.61"
+      },
+      {
+        "name": "nvidia-cufft-cu12",
+        "version": "11.2.1.3"
+      },
+      {
+        "name": "nvidia-cufile",
+        "version": "1.15.1.6"
+      },
+      {
+        "name": "nvidia-curand",
+        "version": "10.4.0.35"
+      },
+      {
+        "name": "nvidia-curand-cu12",
+        "version": "10.3.5.147"
+      },
+      {
+        "name": "nvidia-cusolver",
+        "version": "12.0.4.66"
+      },
+      {
+        "name": "nvidia-cusolver-cu12",
+        "version": "11.6.1.9"
+      },
+      {
+        "name": "nvidia-cusparse",
+        "version": "12.6.3.3"
+      },
+      {
+        "name": "nvidia-cusparse-cu12",
+        "version": "12.3.1.170"
+      },
+      {
+        "name": "nvidia-cusparselt-cu12",
+        "version": "0.6.2"
+      },
+      {
+        "name": "nvidia-cusparselt-cu13",
+        "version": "0.8.0"
+      },
+      {
+        "name": "nvidia-cutlass-dsl",
+        "version": "4.5.2"
+      },
+      {
+        "name": "nvidia-cutlass-dsl-libs-base",
+        "version": "4.5.2"
+      },
+      {
+        "name": "nvidia-cutlass-dsl-libs-cu13",
+        "version": "4.5.2"
+      },
+      {
+        "name": "nvidia-ml-py",
+        "version": "12.575.51"
+      },
+      {
+        "name": "nvidia-nccl-cu12",
+        "version": "2.21.5"
+      },
+      {
+        "name": "nvidia-nccl-cu13",
+        "version": "2.28.9"
+      },
+      {
+        "name": "nvidia-nvjitlink",
+        "version": "13.0.88"
+      },
+      {
+        "name": "nvidia-nvjitlink-cu12",
+        "version": "12.4.127"
+      },
+      {
+        "name": "nvidia-nvshmem-cu13",
+        "version": "3.4.5"
+      },
+      {
+        "name": "nvidia-nvtx",
+        "version": "13.0.85"
+      },
+      {
+        "name": "nvidia-nvtx-cu12",
+        "version": "12.4.127"
+      },
+      {
+        "name": "nvidia-nvvm",
+        "version": "13.3.73"
+      },
+      {
+        "name": "nvitop",
+        "version": "1.5.1"
+      },
+      {
+        "name": "openai",
+        "version": "3.8.0"
+      },
+      {
+        "name": "openai-harmony",
+        "version": "0.0.8"
+      },
+      {
+        "name": "opencv-python-headless",
+        "version": "5.0.0.93"
+      },
+      {
+        "name": "opentelemetry-api",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-exporter-otlp",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-exporter-otlp-proto-common",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-exporter-otlp-proto-grpc",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-exporter-otlp-proto-http",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-proto",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-sdk",
+        "version": "1.44.0"
+      },
+      {
+        "name": "opentelemetry-semantic-conventions",
+        "version": "0.65b0"
+      },
+      {
+        "name": "opentelemetry-semantic-conventions-ai",
+        "version": "0.4.6"
+      },
+      {
+        "name": "outlines",
+        "version": "0.1.11"
+      },
+      {
+        "name": "outlines-core",
+        "version": "0.2.14"
+      },
+      {
+        "name": "packaging",
+        "version": "25.0"
+      },
+      {
+        "name": "pandas",
+        "version": "2.2.3"
+      },
+      {
+        "name": "parso",
+        "version": "0.8.4"
+      },
+      {
+        "name": "partial-json-parser",
+        "version": "0.2.1.1.post5"
+      },
+      {
+        "name": "pexpect",
+        "version": "4.9.0"
+      },
+      {
+        "name": "pickleshare",
+        "version": "0.7.5"
+      },
+      {
+        "name": "pillow",
+        "version": "11.2.1"
+      },
+      {
+        "name": "pip",
+        "version": "25.1"
+      },
+      {
+        "name": "platformdirs",
+        "version": "4.3.8"
+      },
+      {
+        "name": "pluggy",
+        "version": "1.6.0"
+      },
+      {
+        "name": "pre-commit",
+        "version": "4.0.1"
+      },
+      {
+        "name": "prometheus-client",
+        "version": "0.21.1"
+      },
+      {
+        "name": "prometheus-fastapi-instrumentator",
+        "version": "7.1.0"
+      },
+      {
+        "name": "prompt-toolkit",
+        "version": "3.0.51"
+      },
+      {
+        "name": "propcache",
+        "version": "0.3.1"
+      },
+      {
+        "name": "protobuf",
+        "version": "7.36.1"
+      },
+      {
+        "name": "psutil",
+        "version": "7.2.2"
+      },
+      {
+        "name": "ptyprocess",
+        "version": "0.7.0"
+      },
+      {
+        "name": "pure-eval",
+        "version": "0.2.3"
+      },
+      {
+        "name": "py-cpuinfo",
+        "version": "9.0.0"
+      },
+      {
+        "name": "pyarrow",
+        "version": "20.0.0"
+      },
+      {
+        "name": "pybase64",
+        "version": "1.5.0"
+      },
+      {
+        "name": "pycountry",
+        "version": "24.6.1"
+      },
+      {
+        "name": "pydantic",
+        "version": "2.13.5"
+      },
+      {
+        "name": "pydantic-core",
+        "version": "2.46.5"
+      },
+      {
+        "name": "pydantic-extra-types",
+        "version": "2.11.1"
+      },
+      {
+        "name": "pydantic-settings",
+        "version": "2.9.1"
+      },
+      {
+        "name": "pyelftools",
+        "version": "0.33"
+      },
+      {
+        "name": "pygments",
+        "version": "2.21.0"
+      },
+      {
+        "name": "pyparsing",
+        "version": "3.2.3"
+      },
+      {
+        "name": "pytest",
+        "version": "8.3.5"
+      },
+      {
+        "name": "pytest-asyncio",
+        "version": "0.24.0"
+      },
+      {
+        "name": "python-dateutil",
+        "version": "2.9.0.post0"
+      },
+      {
+        "name": "python-dotenv",
+        "version": "1.1.0"
+      },
+      {
+        "name": "python-json-logger",
+        "version": "3.3.0"
+      },
+      {
+        "name": "python-multipart",
+        "version": "0.0.20"
+      },
+      {
+        "name": "pytz",
+        "version": "2025.2"
+      },
+      {
+        "name": "pyyaml",
+        "version": "6.0.2"
+      },
+      {
+        "name": "pyzmq",
+        "version": "27.2.0"
+      },
+      {
+        "name": "quack-kernels",
+        "version": "0.5.0"
+      },
+      {
+        "name": "ray",
+        "version": "2.45.0"
+      },
+      {
+        "name": "referencing",
+        "version": "0.36.2"
+      },
+      {
+        "name": "regex",
+        "version": "2024.11.6"
+      },
+      {
+        "name": "requests",
+        "version": "2.32.3"
+      },
+      {
+        "name": "rich",
+        "version": "14.0.0"
+      },
+      {
+        "name": "rich-toolkit",
+        "version": "0.20.4"
+      },
+      {
+        "name": "rignore",
+        "version": "0.8.1"
+      },
+      {
+        "name": "rpds-py",
+        "version": "0.24.0"
+      },
+      {
+        "name": "ruff",
+        "version": "0.16.6"
+      },
+      {
+        "name": "safetensors",
+        "version": "0.8.0"
+      },
+      {
+        "name": "scipy",
+        "version": "1.15.2"
+      },
+      {
+        "name": "seaborn",
+        "version": "0.13.2"
+      },
+      {
+        "name": "sentencepiece",
+        "version": "0.2.0"
+      },
+      {
+        "name": "sentry-sdk",
+        "version": "2.68.1"
+      },
+      {
+        "name": "setproctitle",
+        "version": "1.3.7"
+      },
+      {
+        "name": "setuptools",
+        "version": "78.1.1"
+      },
+      {
+        "name": "setuptools-scm",
+        "version": "8.3.1"
+      },
+      {
+        "name": "shellingham",
+        "version": "1.5.4"
+      },
+      {
+        "name": "six",
+        "version": "1.17.0"
+      },
+      {
+        "name": "sniffio",
+        "version": "1.3.1"
+      },
+      {
+        "name": "sse-starlette",
+        "version": "2.3.5"
+      },
+      {
+        "name": "stack-data",
+        "version": "0.6.3"
+      },
+      {
+        "name": "starlette",
+        "version": "0.50.0"
+      },
+      {
+        "name": "supervisor",
+        "version": "4.3.0"
+      },
+      {
+        "name": "sympy",
+        "version": "1.14.0"
+      },
+      {
+        "name": "tabulate",
+        "version": "0.10.0"
+      },
+      {
+        "name": "tblib",
+        "version": "3.1.0"
+      },
+      {
+        "name": "tensorboard",
+        "version": "2.19.0"
+      },
+      {
+        "name": "tensorboard-data-server",
+        "version": "0.7.2"
+      },
+      {
+        "name": "tiktoken",
+        "version": "0.9.0"
+      },
+      {
+        "name": "tilelang",
+        "version": "0.1.9"
+      },
+      {
+        "name": "tokenizers",
+        "version": "0.22.2"
+      },
+      {
+        "name": "tokenspeed-mla",
+        "version": "0.1.2"
+      },
+      {
+        "name": "tokenspeed-triton",
+        "version": "3.8.10.post20260721"
+      },
+      {
+        "name": "torch",
+        "version": "2.11.0+cu130"
+      },
+      {
+        "name": "torch-c-dlpack-ext",
+        "version": "0.1.5"
+      },
+      {
+        "name": "torchaudio",
+        "version": "2.11.0+cu130"
+      },
+      {
+        "name": "torchvision",
+        "version": "0.26.0+cu130"
+      },
+      {
+        "name": "tornado",
+        "version": "6.5.1"
+      },
+      {
+        "name": "tqdm",
+        "version": "4.67.1"
+      },
+      {
+        "name": "traitlets",
+        "version": "5.14.3"
+      },
+      {
+        "name": "transformers",
+        "version": "4.57.6"
+      },
+      {
+        "name": "triton",
+        "version": "3.6.0"
+      },
+      {
+        "name": "truststore",
+        "version": "0.10.4"
+      },
+      {
+        "name": "typer",
+        "version": "0.27.2"
+      },
+      {
+        "name": "typing-extensions",
+        "version": "4.16.0"
+      },
+      {
+        "name": "typing-inspection",
+        "version": "0.4.4"
+      },
+      {
+        "name": "tzdata",
+        "version": "2025.2"
+      },
+      {
+        "name": "urllib3",
+        "version": "2.4.0"
+      },
+      {
+        "name": "uv",
+        "version": "0.12.9"
+      },
+      {
+        "name": "uvicorn",
+        "version": "0.34.2"
+      },
+      {
+        "name": "uvloop",
+        "version": "0.21.0"
+      },
+      {
+        "name": "virtualenv",
+        "version": "20.31.2"
+      },
+      {
+        "editable_project_location": "/root/TokenCake/vLLM-TokenCake-upstream",
+        "name": "vllm",
+        "version": "0.1.dev16958+g0b3ba88f1.d20260904.precompiled"
+      },
+      {
+        "name": "watchfiles",
+        "version": "1.0.5"
+      },
+      {
+        "name": "wcwidth",
+        "version": "0.2.13"
+      },
+      {
+        "name": "websockets",
+        "version": "15.0.1"
+      },
+      {
+        "name": "werkzeug",
+        "version": "3.1.3"
+      },
+      {
+        "name": "wheel",
+        "version": "0.45.1"
+      },
+      {
+        "name": "wrapt",
+        "version": "1.17.2"
+      },
+      {
+        "name": "xformers",
+        "version": "0.0.29.post2"
+      },
+      {
+        "name": "xgrammar",
+        "version": "0.2.5.post1"
+      },
+      {
+        "name": "xxhash",
+        "version": "3.5.0"
+      },
+      {
+        "name": "yapf",
+        "version": "0.43.0"
+      },
+      {
+        "name": "yarl",
+        "version": "1.20.0"
+      },
+      {
+        "name": "z3-solver",
+        "version": "4.15.4.0"
+      },
+      {
+        "name": "zipp",
+        "version": "3.21.0"
+      },
+      {
+        "name": "zipp",
+        "version": "3.23.0"
+      }
+    ],
+    "path": "/root/autodl-tmp/conda_envs/mooncake_agent"
+  },
+  "paper": {
+    "revision_date": "2026-08-21",
+    "role": "algorithmic context; exact source HEAD resolves differences",
+    "url": "https://arxiv.org/abs/2510.18586v4"
+  },
+  "repositories": {
+    "mooncake_configuration": {
+      "branch": "tokencake-mooncake",
+      "commit": "696c9a14f30ffeacda1707e8f712b7a214460be6",
+      "path": "/root/TokenCake/Mooncake-TokenCake",
+      "status": ""
+    },
+    "native_reference": {
+      "branch": "main",
+      "commit": "8b6de0eb9a09ef53f20cf06bd4d17ee264b9c2a7",
+      "path": "/root/TokenCake/vllm-note",
+      "role": "reference-only",
+      "status": ""
+    },
+    "source": {
+      "branch": "submit-impl",
+      "commit": "7a608a4e53ea990b2540c93b4d28cb795b905109",
+      "path": "/root/TokenCake/vllm_agent",
+      "status": ""
+    },
+    "target": {
+      "branch": "upstream",
+      "commit": "c5838ce19c78daea9b00cca5157ce982e36784ab",
+      "path": "/root/TokenCake/vLLM-TokenCake-upstream",
+      "status": "?? tools/tokencake_experiments/"
+    }
+  },
+  "schema_version": 1,
+  "transferred_source_helpers": [
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/code_writer.py",
+      "sha256": "8965d15de8078d37537ef6973d9ecfac0a2cbfa51ce00af286350746c30a80c6",
+      "size_bytes": 9865
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/code_writer_mcp.py",
+      "sha256": "8909f98e5c902b06680b7319fe73b36e92e0cb46d07c322c90c0f021a60fac7c",
+      "size_bytes": 13250
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/code_writer_paper_pressure.py",
+      "sha256": "d741d08dd3da06036a784591b763b7f3b1e71d17dd87f2cb0771a59c99944c19",
+      "size_bytes": 19893
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/code_writer_raw.py",
+      "sha256": "b01e6b968d4d17b13a76052b9eb7f5d526ac1586758a9061484d56d0e3421c16",
+      "size_bytes": 13008
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/code_writer_same.py",
+      "sha256": "231d9f79ecce9b2a217d683b7b5aedf511c6493d07f9db1420be2efbfc7449b8",
+      "size_bytes": 13250
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/deep_research_mcp.py",
+      "sha256": "6f3b92efd764db46c60ab5fb55f51712a81908bbf7a62dfe0ff7a641e498fe7c",
+      "size_bytes": 15771
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/request.py",
+      "sha256": "4cb67851f5e83430a29f2e52615e85649d2510f4e894f4dfa8b26377c6789e84",
+      "size_bytes": 6409
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/single_agent_mcp.py",
+      "sha256": "7e4231f6ee1f9c0a55059c08b615c2527b5158fbe3f3f1cbeb4f1b2a2dd91af9",
+      "size_bytes": 12425
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/app/summary_map.py",
+      "sha256": "3728536bffc91cdcdf8e4544d491b765bcc1b73255cd150db2f474d3132c4e72",
+      "size_bytes": 4299
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/code_writer.json",
+      "sha256": "e7646d829dc5aa1770f3625e2a249d40bf8e12b202935767f7c30fbb9dc77507",
+      "size_bytes": 233
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/code_writer_data.json",
+      "sha256": "3f2327fa048c56d1d26ff208e0d3c634fd9c50e568ffb4830f414d49658855f0",
+      "size_bytes": 27232
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/code_writer_data.py",
+      "sha256": "d787c2ed78ca7bcd682092c5516aec41727dd74883b9754f489a00631368dbd6",
+      "size_bytes": 9196
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/code_writer_output_record.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/deep_research_data.py",
+      "sha256": "21dd058a4a41262e823b889ab137b6942b446cc333cbf3d87c7db358fc412624",
+      "size_bytes": 5713
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/deep_research_output_record.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/data/output_record_parsed.json",
+      "sha256": "a0e0fd00f36dff1ea17ba755071adbe0505b69a0480c6f2c2216aaef0a45a0e1",
+      "size_bytes": 12709
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/graph/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/graph/chunk_analyzer.py",
+      "sha256": "9e9f27baf7a794b4ff7ebb06bbebca6cfdef653cbeb9bfcefd3ab3e473ee1850",
+      "size_bytes": 36850
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/graph/graph.py",
+      "sha256": "80b124c90c094143a369d3e3fba52816e5b51706d65b0a1bc66f175a7602ab05",
+      "size_bytes": 7259
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/graph/meta.py",
+      "sha256": "e0ccea50834f5a743c64836866080155fc63db487186bb2ec1051530c6e1c60f",
+      "size_bytes": 1826
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/graph/node.py",
+      "sha256": "1d225c26b19db114fd5fdb55e2d1b29f75c6dc2d4a85830a808ef6cbad65dddf",
+      "size_bytes": 5872
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/mcp/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/mcp/mcp_func.py",
+      "sha256": "1fbc30aa86eff0e78368abbc2e715e53e009df225ff1d0d35dd2cdad5b737c3b",
+      "size_bytes": 19883
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/mcp/mcp_node.py",
+      "sha256": "d6ad28b8ce5cc84e68c2dd5d54cf625d632f9361dc34d3c41480fcad85f684b4",
+      "size_bytes": 24951
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/mcp/static.py",
+      "sha256": "a5257ded90c4ecd2cec3c7f48ab9b3d2d33e3d670107f6d54d2c6d1052eccd75",
+      "size_bytes": 2082
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/mcp_test.py",
+      "sha256": "981b065973c48f53e288a2487235dab6adb77c9f84a17b103b15b63c7c43ccba",
+      "size_bytes": 7309
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/send_request_simple.py",
+      "sha256": "cb36a233e62c1086a4b96fcd1cae9fd72aa6a451c93c6e17d168205c27ff1191",
+      "size_bytes": 2726
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/util/output_token_len.py",
+      "sha256": "f0244c4c85a396cdbfead2f2d1cdb075d566c1025d4516ba609a7d4ac35299f1",
+      "size_bytes": 773
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/agent/vllm_prompt.py",
+      "sha256": "2cbd10987b3562c39873a6ae444fdf5dfadbfee12f871441f447ebadec9ea3c5",
+      "size_bytes": 2211
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/docs/pkua100_cpu_offload_experiment_handoff.md",
+      "sha256": "926e2a22a3e31962fd8b8f94c9de64727557622f13cb0673b4b7e8c02910bf17",
+      "size_bytes": 29891
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/cpu_offload_vllm_serving_benchmark.py",
+      "sha256": "d25d51a3d1361d98b8c57e9ee5af36c46620cf6399e9a390396f9a49787e2cf8",
+      "size_bytes": 76075
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/README.md",
+      "sha256": "7177213d0c337c27e50673366d790f696ea39b404d78f2b5c67a6f57f0d83944",
+      "size_bytes": 5324
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/STATUS.md",
+      "sha256": "bce546edb9680f99296ac1957e6a3a1aefeb8e692a16666db3b7031bf1b6fa5c",
+      "size_bytes": 3337
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/__init__.py",
+      "sha256": "3704d145a2c1e8720857379b971b9709a5a30f4aed6f79a63ed584364090a989",
+      "size_bytes": 124
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/analysis.py",
+      "sha256": "499b39624d20972e7a4ac023dd8d41a921c42e64b7d9b189ebf03b12066e547b",
+      "size_bytes": 40383
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/catalog.py",
+      "sha256": "a0083a8b3dcf54ee6cd167042e0c9ae4531f869bab984ab000bf603df2b0c141",
+      "size_bytes": 9559
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/commands.py",
+      "sha256": "5c8cdec77c5012238265b1606766ba9950bbf77691577b4c4488a0a4fee2fd47",
+      "size_bytes": 10991
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/default_manifest.json",
+      "sha256": "d5cdc53ce4e23564970d6a17b59ec87d756da06378e403dfca8e4e82f6413e0a",
+      "size_bytes": 10782
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/driver.py",
+      "sha256": "6089d05377f8516f9113d2c281ddf26e10f71a3e33956386b0cd378360afa128",
+      "size_bytes": 35439
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/evidence.py",
+      "sha256": "76584ff1ee03ac90254e88564e2839d18a7dfcbe365049e33289daf1f655ac65",
+      "size_bytes": 6905
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/launch_server.py",
+      "sha256": "08cf6ec2bb9f9fbe68e3d82aff56ab8cef659f871a859e7d8806d8de00df17f5",
+      "size_bytes": 8225
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/runtime.py",
+      "sha256": "5ba0c2d4517b272504075d1d44f730e4ade92a3a9a5fea8a9a19387078db065c",
+      "size_bytes": 13890
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/tools/tokencake_experiments/schema.py",
+      "sha256": "ab842ef47ad170b9e5533a34e1e4c48bd5e7795a436bbd0d8d0bf2b511f0fb5c",
+      "size_bytes": 7702
+    },
+    {
+      "path": "/root/TokenCake/vllm_agent/vllm_serving.py",
+      "sha256": "70665d2171265b640af2591ca381bea1e209e55e6436fc4e607c0055e35d020e",
+      "size_bytes": 33972
+    }
+  ],
+  "vllm_wheel": {
+    "path": "/root/autodl-tmp/vllm-wheels/vllm-0.22.0-cp38-abi3-manylinux_2_28_x86_64.whl",
+    "sha256": "c387a977e35795e8f77b009e019e69722963819c26b55e4a679e09d4279ae35d",
+    "size_bytes": 261034920
+  }
+}

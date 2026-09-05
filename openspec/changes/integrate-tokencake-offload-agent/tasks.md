@@ -1,9 +1,11 @@
+# Implementation Tasks
+
 ## 1. Freeze Sources And Environments
 
-- [ ] 1.1 Record target/source/`vllm-note` commits, branches and worktree status, paper/source-document references, the transferred source experiment-helper manifest and hashes, model identity, dataset path and SHA-256, Mooncake package/wheel/config commits, GPU UUIDs, and NUMA CPU sets in a machine-readable provenance artifact; verify every recorded path/hash against a read-only command and identify `vllm-note` as reference-only.
-- [ ] 1.2 Create the target repo-local `.venv` with `uv` from the accepted `mooncake_agent`/Torch 2.11-compatible interpreter and package stack without modifying the original environment, install target vLLM and focused test/lint dependencies without using system Python or bare pip, install pre-commit hooks, and verify `.venv/bin/python` imports the target checkout, Mooncake 0.3.8, and the expected CUDA devices.
-- [ ] 1.3 Create an isolated repo-local source environment for exact `../vllm_agent` HEAD with its compatible Torch 2.6 stack, and verify its environment imports the unchanged source checkout without changing source git status.
-- [ ] 1.4 Materialize an immutable official-v0.22 baseline checkout/worktree at the recorded upstream commit and verify its scheduler, TokenCake configuration, and KV-offload settings are absent for baseline launches.
+- [x] 1.1 Record target/source/`vllm-note` commits, branches and worktree status, paper/source-document references, the transferred source experiment-helper manifest and hashes, model identity, dataset path and SHA-256, Mooncake package/wheel/config commits, GPU UUIDs, and NUMA CPU sets in a machine-readable provenance artifact; verify every recorded path/hash against a read-only command and identify `vllm-note` as reference-only.
+- [x] 1.2 Create the target repo-local `.venv` with `uv` from the accepted `mooncake_agent`/Torch 2.11-compatible interpreter and package stack without modifying the original environment, install target vLLM and focused test/lint dependencies without using system Python or bare pip, install pre-commit hooks, and verify `.venv/bin/python` imports the target checkout, Mooncake 0.3.8, and the expected CUDA devices.
+- [x] 1.3 Create an isolated repo-local source environment for exact `../vllm_agent` HEAD with its compatible Torch 2.6 stack, and verify its environment imports the unchanged source checkout without changing source git status.
+- [x] 1.4 Materialize an immutable official-v0.22 baseline checkout/worktree at the recorded upstream commit and verify its scheduler, TokenCake configuration, and KV-offload settings are absent for baseline launches.
 
 ## 2. Add Structured Configuration And Request Metadata
 

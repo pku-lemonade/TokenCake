@@ -51,5 +51,38 @@ SPDX, forbidden imports and configuration checks. Output is retained in
 formatting pass preceded this successful final run. `git diff --check` and
 `openspec validate integrate-tokencake-offload-agent --strict` also passed.
 
-The hardware/runtime freeze is the remaining Stage-7 step. Full 24-DAG
-performance acceptance is still pending. AI assistance was used.
+## Hardware And Runtime Freeze
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.driver prepare \
+  /root/autodl-tmp/tokencake-acceptance/phase-1-final
+```
+
+The final read-only preflight passed. Both A800 UUIDs and NUMA CPU sets match;
+ports 8055 and 8056 were available, no external GPU process was present, and
+1,047,354,142,720 host bytes were available. All model shards and the declared
+dataset checksum were verified. Target and official baseline imported Torch
+2.11.0+cu130 and the expected native extensions; unchanged source imported its
+Torch 2.6.0+cu124 stack. Mooncake 0.3.8 and its extension hashes were verified.
+The baseline resolved to native FCFS with no additional config or KV offload.
+
+Both environments generated identical 24-DAG contracts and arrival traces;
+the workload contract hash is
+`1590183398f961e31fa1253252e7624a5ef8a64d1406c00610a4587f999f60ed`.
+The frozen records are copied to `stage-7-preflight/`; full preparation logs
+and disposable launchers remain under the absolute campaign directory above.
+
+The driver now includes both the read-only base package stack and local
+overrides in environment identity and verifies them before execution. It
+checks frozen JSON input hashes before each launch and audits the actual
+recorded application arrival offsets against the source-generated trace.
+Credential filtering preserves performance knobs containing `TOKENS`.
+The final driver/report regression passed 31 tests in 7.14 seconds, recorded
+in `stage-7-environment-final.xml`, with all applicable hooks passing.
+
+Earlier preparation-only records at sibling `phase-1` and `phase-1-v2`
+directories are retained. Neither launched a model server or consumed a
+benchmark launch. The final experiment runtime is the committed vLLM tree of
+`1cde5a084`; subsequent preflight/tooling evidence does not change that runtime.
+
+Full 24-DAG performance acceptance is still pending. AI assistance was used.

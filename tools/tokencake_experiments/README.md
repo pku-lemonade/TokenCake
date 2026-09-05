@@ -141,6 +141,11 @@ drivers or a reporting process from modifying a live launch ledger. A resumed
 campaign retains interrupted launches as exclusions and verifies its frozen
 inputs before continuing.
 
+Environment identity includes the read-only parent package stack as well as
+repo-local overrides. Frozen JSON inputs are hashed and checked before every
+launch, and recorded application arrivals must match the source-generated
+trace for that QPS.
+
 The target client applies `launcher.patch` to exact source commit
 `7a608a4e53ea990b2540c93b4d28cb795b905109`; only request/event protocol changes
 are applied. The wrapper aliases the relocated tokenizer import to the target

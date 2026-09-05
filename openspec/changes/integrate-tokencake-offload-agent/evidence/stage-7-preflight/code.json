@@ -1,0 +1,21 @@
+{
+  "baseline": {
+    "checkout": "/root/TokenCake/vLLM-TokenCake-upstream/.venv/baseline",
+    "commit": "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af",
+    "runtime_tree": "3c131d1ac3a667c75ebcdb3f4f452aceb15f4f38"
+  },
+  "mooncake_configuration": {
+    "checkout": "/root/TokenCake/Mooncake-TokenCake",
+    "commit": "696c9a14f30ffeacda1707e8f712b7a214460be6"
+  },
+  "source": {
+    "checkout": "/root/TokenCake/vllm_agent",
+    "commit": "7a608a4e53ea990b2540c93b4d28cb795b905109",
+    "runtime_tree": "031e1b3973bd74fe5cfd1364b011cd613eb48ae0"
+  },
+  "target": {
+    "checkout": "/root/TokenCake/vLLM-TokenCake-upstream",
+    "commit": "1cde5a084348428561f5c45e505103280a56f3c2",
+    "runtime_tree": "2c349b7f1aa3946a008c48b0f7fc40a2dd51b83f"
+  }
+}

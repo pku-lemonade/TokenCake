@@ -56,7 +56,7 @@
 
 - [x] 7.1 Run the focused configuration, protocol, lifecycle, scheduling, connector, reset, metrics, launcher, and report unit tests through the target `.venv/bin/python -m pytest`; verify all selected tests pass and retain the exact command/output artifact.
 - [x] 7.2 Run changed-file format, lint, and type checks through the repo-local environment and pre-commit hooks; verify all applicable checks pass without unrelated formatting churn.
-- [ ] 7.3 Run a read-only hardware/runtime preflight for both A800s, NUMA affinity, model readability, dataset checksum, CPU offload capacity, target/source imports, Mooncake 0.3.8 import, and free ports; verify blockers are reported before any timed case and do not create smoke performance evidence.
+- [x] 7.3 Run a read-only hardware/runtime preflight for both A800s, NUMA affinity, model readability, dataset checksum, CPU offload capacity, target/source imports, Mooncake 0.3.8 import, and free ports; verify blockers are reported before any timed case and do not create smoke performance evidence.
 
 ## 8. Execute Phase-1 End-To-End Acceptance
 

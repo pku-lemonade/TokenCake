@@ -114,6 +114,15 @@ def audit(case_dir: Path, source_result: dict, execution: dict, frozen: dict) ->
         != frozen["workload_sha256"]
     ):
         reasons.append("workload_mismatch")
+    app_files = list((case_dir / "app_results").glob("*.json"))
+    if len(app_files) == 1:
+        applications = json.loads(app_files[0].read_text())
+        qps = execution["identity"]["case"]["qps"]
+        if any(
+            applications.get(str(index), {}).get("arrival_offset_s") != offset
+            for index, offset in enumerate(frozen["arrivals"][f"{qps:.1f}"])
+        ):
+            reasons.append("arrival_schedule_mismatch")
     client_log = (
         (case_dir / "client.log").read_text(errors="replace")
         if (case_dir / "client.log").exists()
@@ -240,6 +249,9 @@ class Runner:
         return results
 
     def verify_frozen(self) -> None:
+        for name, expected in self.frozen["input_hashes"].items():
+            if digest(self.root / name) != expected:
+                raise RuntimeError(f"Frozen campaign input changed: {name}")
         if inherited_environment() != self.frozen["inherited_environment"]:
             raise RuntimeError("Inherited serving environment changed")
         code = verify_code()
@@ -262,6 +274,22 @@ class Runner:
 
     def verify_inputs(self) -> None:
         provenance = json.loads((self.root / "provenance.json").read_text())
+        base = provenance["original_environment"]
+        packages = json.loads(
+            subprocess.check_output(
+                [
+                    "uv",
+                    "pip",
+                    "list",
+                    "--python",
+                    str(Path(base["path"]) / "bin/python"),
+                    "--format=json",
+                ],
+                text=True,
+            )
+        )
+        if packages != base["packages"]:
+            raise RuntimeError("Read-only base environment packages changed")
         files = [
             provenance["dataset"],
             *provenance["model"]["files"],

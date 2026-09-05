@@ -1,0 +1,3757 @@
+{
+  "arrivals": {
+    "0.1": [
+      0.0,
+      10.0,
+      20.0,
+      30.0,
+      40.0,
+      50.0,
+      60.0,
+      70.0,
+      80.0,
+      90.0,
+      100.0,
+      110.0,
+      120.0,
+      130.0,
+      140.0,
+      150.0,
+      160.0,
+      170.0,
+      180.0,
+      190.0,
+      200.0,
+      210.0,
+      220.0,
+      230.0
+    ],
+    "0.5": [
+      0.0,
+      2.0,
+      4.0,
+      6.0,
+      8.0,
+      10.0,
+      12.0,
+      14.0,
+      16.0,
+      18.0,
+      20.0,
+      22.0,
+      24.0,
+      26.0,
+      28.0,
+      30.0,
+      32.0,
+      34.0,
+      36.0,
+      38.0,
+      40.0,
+      42.0,
+      44.0,
+      46.0
+    ],
+    "1.0": [
+      0.0,
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      6.0,
+      7.0,
+      8.0,
+      9.0,
+      10.0,
+      11.0,
+      12.0,
+      13.0,
+      14.0,
+      15.0,
+      16.0,
+      17.0,
+      18.0,
+      19.0,
+      20.0,
+      21.0,
+      22.0,
+      23.0
+    ]
+  },
+  "workload_contracts": [
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "bc88e8b19f61c682f5f33afb1c0268f1c6b43f617a57104773457ffbfa73c014",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "3a096d761cacad87953bb4bb5717b249a563000ef95b2eec3d44b521405c494b",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "0588218a56da1101e738bc891e8b1056eda91de2eb1d284eaa788461bfb3f089",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "e8dbb1f22e32370ec4b1fafa282c679db853cccdf81fa76e9727f6e5d36ad036",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "b4e9d170af0b1dad072f36c46dd7e1a88d28e20575bed46efc3b6a4c7eb3bad8",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "bd9160b1e796a8af26ab64b3dcf9e8a8d63b732f4c61701023501eb68211b59f",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "af9ecb289925886324defae1c76eb3c30c36f17dff750c8156740c3665c4ab59",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "731344b7dabc5797abd29b42755ee40e777a363d31c0573520803c85493b3eec",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "c0a2b61091b4c29b07507e17145ba98731d1084092ac8f92e6df8a927dbdca1e",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "c97632d4c95dea04b5d501dc0da4bb82b802a1ad7730f53cbd2275a235ec4353",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "365cbdb4f4be4acbe26ab02dacfac0d7c91e068f3407cc4e366bc1dfae43d1f5",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "da4edb01631b3d0ebb4d0baf3a6a5416aaa596889b8cb76d60d7332060aaacdc",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "98ef2b2a272b38eefcc40ef33264ee6d4f20b6cec0a8658e10036cde1b67747a",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "62d802df73a37fbbd67da786fd5e92f52b0acfc41d52c07aa11ccb322e7f2d72",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "28f0922c9157ffd0a3b104b06e44ce92058b84f935ed54ca25118981f6dca640",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "7ca58f9e0276f91091898538f38b796be990d0e80353d96177549f852c7f6d4d",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "3e13017f6143d23985ba76325ceab6076100ad420a5b3fc8af5e5201923d5e56",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "afc3cd92a3cfa3b18d1bb72fdd6023a22c520953120b0d9b0d108ec43fbd8331",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "cc09ae0606ae131221a5a97683daa8825e0ad4f52fcef77bcf43f3dc4c1a9076",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "d1ea7c7fe23356ae6585bae937421da9e7ce7bf5eca774d487d47d481f94cff9",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "a726ae0eb0ee5c0107a2d0990b1e9878758b1be896b4f9e01985d9ba409b4208",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "b4b6533dbc1cdb998428ce4993029a0ebc3e8319c487fc40f3fa5224fe5a0b45",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "6d175477cca7dc6df0e0e413fbb6d5639e699ee17b40b4b465974f7744c18a7d",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    },
+    {
+      "application": "CodeWriterPaperPressureApplication",
+      "application_prompt_sha256": "e81e908e867118641524842ce6f7bb304c95298248bc447dc35e88320eb5b4fd",
+      "dataset_prompt_sha256": "0320f46474efd492d8d8af132a8c4b0e3459d94fa57aaf60e52e9e318a4c78c3",
+      "expected_dag_nodes": [
+        {
+          "is_mcp": false,
+          "name": "architect_1",
+          "type": "architect"
+        },
+        {
+          "is_mcp": false,
+          "name": "architect_2",
+          "type": "architect"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "code_write_3",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "end_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "external_eval",
+          "type": "mcp_external_tool_eval"
+        },
+        {
+          "is_mcp": true,
+          "name": "file_write_plan",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_1",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": true,
+          "name": "judger_2",
+          "type": "mcp_conditional_execution"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_1_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_1_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_2_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_2_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "programmer_3_repair",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": true,
+          "name": "programmer_3_validate_patch",
+          "type": "programmer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_1",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviewer_2",
+          "type": "reviewer"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_1",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": true,
+          "name": "revised_code_write_2",
+          "type": "mcp_file_write"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_1_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_1_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": false,
+          "name": "reviser_2_repair",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "reviser_2_validate_patch",
+          "type": "reviser"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_1",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": true,
+          "name": "search_2",
+          "type": "mcp_search"
+        },
+        {
+          "is_mcp": false,
+          "name": "start_mcp",
+          "type": "text"
+        },
+        {
+          "is_mcp": true,
+          "name": "test_node",
+          "type": "mcp_external_test"
+        },
+        {
+          "is_mcp": true,
+          "name": "user_confirm",
+          "type": "mcp_user_confirm"
+        }
+      ],
+      "task": "code-paper-pressure"
+    }
+  ],
+  "workload_sha256": "1590183398f961e31fa1253252e7624a5ef8a64d1406c00610a4587f999f60ed"
+}

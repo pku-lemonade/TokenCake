@@ -60,7 +60,7 @@ def inherited_environment() -> dict[str, str]:
         key: value
         for key, value in sorted(os.environ.items())
         if (key.startswith(prefixes) or key in ("PATH", "LD_LIBRARY_PATH"))
-        and not any(secret in key for secret in ("KEY", "TOKEN", "PASSWORD"))
+        and not key.endswith(("_KEY", "_TOKEN", "_PASSWORD"))
     }
 
 
@@ -246,6 +246,7 @@ def prepare(run_root: Path) -> dict:
                     key: value for key, value in runtime.items() if key != "command"
                 },
                 "packages": packages,
+                "base_packages": provenance["original_environment"]["packages"],
             }
         )
         write_json(run_root / f"packages-{role}.json", packages)
@@ -308,6 +309,7 @@ def prepare(run_root: Path) -> dict:
         "parameters": parameters,
         "code": code,
         "workload_sha256": workload["workload_sha256"],
+        "arrivals": workload["arrivals"],
         "identities": identities,
         "tool_hashes": {
             path.name: digest(path)
@@ -317,6 +319,9 @@ def prepare(run_root: Path) -> dict:
         "mooncake": mooncake["configuration"],
         "mooncake_master_sha256": mooncake["master_sha256"],
         "inherited_environment": inherited,
+        "input_hashes": {
+            path.name: digest(path) for path in sorted(run_root.glob("*.json"))
+        },
     }
     write_json(run_root / "frozen.json", frozen)
     return frozen

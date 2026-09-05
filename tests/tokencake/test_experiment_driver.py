@@ -13,7 +13,7 @@ import pytest
 from tools.tokencake_experiments.campaign import DEVICES, ROOT, SOURCE, Case
 from tools.tokencake_experiments.driver import Runner, audit
 from tools.tokencake_experiments.materialize import digest, materialize
-from tools.tokencake_experiments.preflight import adapter
+from tools.tokencake_experiments.preflight import adapter, inherited_environment
 from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
     Activity,
@@ -22,6 +22,17 @@ from tools.tokencake_experiments.runtime import (
     cpu_set,
     write_json,
 )
+
+
+def test_environment_fingerprint_keeps_performance_knobs(monkeypatch):
+    monkeypatch.setenv("VLLM_MAX_NUM_BATCHED_TOKENS", "2048")
+    monkeypatch.setenv("TOKENCAKE_POLICY", "test")
+    monkeypatch.setenv("VLLM_API_KEY", "test-secret")
+    monkeypatch.setenv("HF_TOKEN", "test-secret")
+    environment = inherited_environment()
+    assert environment["VLLM_MAX_NUM_BATCHED_TOKENS"] == "2048"
+    assert environment["TOKENCAKE_POLICY"] == "test"
+    assert "VLLM_API_KEY" not in environment and "HF_TOKEN" not in environment
 
 
 def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
@@ -106,6 +117,7 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
     apps = {
         str(index): {
             "app_finished": True,
+            "arrival_offset_s": index,
             "app_latency": 1 + index,
             "expected_node_names": ["local", "generation"],
             "frozen_workload_contract": contracts[index],
@@ -157,7 +169,10 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
         "contamination": contamination,
         "performance": {"total_e2e_s": 100},
     }
-    frozen = {"workload_sha256": content_hash(contracts)}
+    frozen = {
+        "workload_sha256": content_hash(contracts),
+        "arrivals": {"1.0": list(range(24))},
+    }
     result = audit(case_dir, source, execution, frozen)
     assert result["qualifying"]
     assert result["performance"]["p50_app_latency_s"] == 12.5
@@ -167,6 +182,12 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
     assert result["attempt_diagnostics"]["prompt_halvings"] == 1
     for path, expected in result["artifacts"].items():
         assert digest(case_dir / path) == expected
+    apps["0"]["arrival_offset_s"] = 1
+    (case_dir / "app_results/completed.json").write_text(json.dumps(apps))
+    rejected = audit(case_dir, source, execution, frozen)
+    assert "arrival_schedule_mismatch" in rejected["exclusion_reasons"]
+    apps["0"]["arrival_offset_s"] = 0
+    (case_dir / "app_results/completed.json").write_text(json.dumps(apps))
     for flag in (
         "affinity_violation",
         "monitor_query_failed",

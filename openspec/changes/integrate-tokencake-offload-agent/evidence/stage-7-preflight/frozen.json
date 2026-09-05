@@ -1,0 +1,365 @@
+{
+  "arrivals": {
+    "0.1": [
+      0.0,
+      10.0,
+      20.0,
+      30.0,
+      40.0,
+      50.0,
+      60.0,
+      70.0,
+      80.0,
+      90.0,
+      100.0,
+      110.0,
+      120.0,
+      130.0,
+      140.0,
+      150.0,
+      160.0,
+      170.0,
+      180.0,
+      190.0,
+      200.0,
+      210.0,
+      220.0,
+      230.0
+    ],
+    "0.5": [
+      0.0,
+      2.0,
+      4.0,
+      6.0,
+      8.0,
+      10.0,
+      12.0,
+      14.0,
+      16.0,
+      18.0,
+      20.0,
+      22.0,
+      24.0,
+      26.0,
+      28.0,
+      30.0,
+      32.0,
+      34.0,
+      36.0,
+      38.0,
+      40.0,
+      42.0,
+      44.0,
+      46.0
+    ],
+    "1.0": [
+      0.0,
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      6.0,
+      7.0,
+      8.0,
+      9.0,
+      10.0,
+      11.0,
+      12.0,
+      13.0,
+      14.0,
+      15.0,
+      16.0,
+      17.0,
+      18.0,
+      19.0,
+      20.0,
+      21.0,
+      22.0,
+      23.0
+    ]
+  },
+  "code": {
+    "baseline": {
+      "checkout": "/root/TokenCake/vLLM-TokenCake-upstream/.venv/baseline",
+      "commit": "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af",
+      "runtime_tree": "3c131d1ac3a667c75ebcdb3f4f452aceb15f4f38"
+    },
+    "mooncake_configuration": {
+      "checkout": "/root/TokenCake/Mooncake-TokenCake",
+      "commit": "696c9a14f30ffeacda1707e8f712b7a214460be6"
+    },
+    "source": {
+      "checkout": "/root/TokenCake/vllm_agent",
+      "commit": "7a608a4e53ea990b2540c93b4d28cb795b905109",
+      "runtime_tree": "031e1b3973bd74fe5cfd1364b011cd613eb48ae0"
+    },
+    "target": {
+      "checkout": "/root/TokenCake/vLLM-TokenCake-upstream",
+      "commit": "1cde5a084348428561f5c45e505103280a56f3c2",
+      "runtime_tree": "2c349b7f1aa3946a008c48b0f7fc40a2dd51b83f"
+    }
+  },
+  "identities": [
+    {
+      "artifact_sha256": "0a8b012b52a1075666c19a8f83d39ef421585fb85310e151c99ae91722c5b331",
+      "case": {
+        "mode": "native",
+        "phase": "phase-1",
+        "qps": 1.0
+      },
+      "config_sha256": "e12aa7389667948adf441fc99513f6d20d9d73adee4313b5b87684b3702219d1",
+      "environment_sha256": "63f0fb78316d7a18230720ab10b1360c1533d468706f0b88dacef690a39aa7c9",
+      "key": "761ca710418a3c7d7aacbfee4e614219b8b21272bd5132ee6baacd0c4a801a6e",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "0a8b012b52a1075666c19a8f83d39ef421585fb85310e151c99ae91722c5b331",
+      "case": {
+        "mode": "native",
+        "phase": "phase-1",
+        "qps": 0.5
+      },
+      "config_sha256": "e12aa7389667948adf441fc99513f6d20d9d73adee4313b5b87684b3702219d1",
+      "environment_sha256": "63f0fb78316d7a18230720ab10b1360c1533d468706f0b88dacef690a39aa7c9",
+      "key": "93b100d70025cab51cfc93ee7b4db21f8be1a6fc17c2ed168e0c5402fd93b0b3",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "0a8b012b52a1075666c19a8f83d39ef421585fb85310e151c99ae91722c5b331",
+      "case": {
+        "mode": "native",
+        "phase": "phase-1",
+        "qps": 0.1
+      },
+      "config_sha256": "e12aa7389667948adf441fc99513f6d20d9d73adee4313b5b87684b3702219d1",
+      "environment_sha256": "63f0fb78316d7a18230720ab10b1360c1533d468706f0b88dacef690a39aa7c9",
+      "key": "a48d3751d07368ec04c25f996c739c0397a1bbc85cef91afa87d77b08d9b245b",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "offload-agent",
+        "phase": "phase-1",
+        "qps": 1.0
+      },
+      "config_sha256": "e8f0f60c4fb39cf1c4c38ecb70b9c19b652eb0cc6b3d68a747e9889c4ce014f3",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "a9425b60fa9bdcbcb34387925ca7b5dea19a48e94109f97bd89987ee66193cf2",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "offload-agent",
+        "phase": "phase-1",
+        "qps": 0.5
+      },
+      "config_sha256": "e8f0f60c4fb39cf1c4c38ecb70b9c19b652eb0cc6b3d68a747e9889c4ce014f3",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "f5b1622121d1d2c7ce5748896fb771a3690e8e7a852b84d4a674681c6204b7d4",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "offload-agent",
+        "phase": "phase-1",
+        "qps": 0.1
+      },
+      "config_sha256": "e8f0f60c4fb39cf1c4c38ecb70b9c19b652eb0cc6b3d68a747e9889c4ce014f3",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "0764347a67eda1ce40b21426fa10411f3a90cb020b7e3686b6a8ec86e0c67f6e",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "agent",
+        "phase": "phase-1",
+        "qps": 1.0
+      },
+      "config_sha256": "cff0d81116c95a90f98fe3fcdaccbee60581852b001cb719ed70a66826fcfddd",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "955f0337ad6157af0f9b37066cbbfe7260b8f9bf4698ccdd48293af94c4fb692",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "agent",
+        "phase": "phase-1",
+        "qps": 0.5
+      },
+      "config_sha256": "cff0d81116c95a90f98fe3fcdaccbee60581852b001cb719ed70a66826fcfddd",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "31b1b4ee1d11ef31d87def51e7323f3293f8fab17f745daf48df185319a29359",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "agent",
+        "phase": "phase-1",
+        "qps": 0.1
+      },
+      "config_sha256": "cff0d81116c95a90f98fe3fcdaccbee60581852b001cb719ed70a66826fcfddd",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "a973cbd163527a236b4ab23bdfab9cfb15f16d779e5da0fbf7cdb7a6f67d8ab8",
+      "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "8ef0b2b0642655793d2e7a236a61fe4e19b57081b455f915a303696a3feee388",
+      "case": {
+        "mode": "old-offload-agent",
+        "phase": "phase-1",
+        "qps": 1.0
+      },
+      "config_sha256": "75bfb6eaff5bd3dafcd8ea24798162071ff4970547760f6c143d80898dca92f2",
+      "environment_sha256": "44c7516b92d6c89001fd6e4a3f68d3a7dd444f4ba51de06b0afeaff74834543f",
+      "key": "b079971c35cbd83f526a06c9fac067aa25175d1e487f546e8eebd8b8f18a5daa",
+      "launcher_sha256": "8344235a023f809d08b1900bc57c4bfdbaa90b60071f326b111b2c13d1fcd469",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "8ef0b2b0642655793d2e7a236a61fe4e19b57081b455f915a303696a3feee388",
+      "case": {
+        "mode": "old-offload-agent",
+        "phase": "phase-1",
+        "qps": 0.5
+      },
+      "config_sha256": "75bfb6eaff5bd3dafcd8ea24798162071ff4970547760f6c143d80898dca92f2",
+      "environment_sha256": "44c7516b92d6c89001fd6e4a3f68d3a7dd444f4ba51de06b0afeaff74834543f",
+      "key": "a1a840c0f79280658cc7f756f04a5feee16f7ea789e08a1fe45c5fa88d6e51a7",
+      "launcher_sha256": "8344235a023f809d08b1900bc57c4bfdbaa90b60071f326b111b2c13d1fcd469",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "8ef0b2b0642655793d2e7a236a61fe4e19b57081b455f915a303696a3feee388",
+      "case": {
+        "mode": "old-offload-agent",
+        "phase": "phase-1",
+        "qps": 0.1
+      },
+      "config_sha256": "75bfb6eaff5bd3dafcd8ea24798162071ff4970547760f6c143d80898dca92f2",
+      "environment_sha256": "44c7516b92d6c89001fd6e4a3f68d3a7dd444f4ba51de06b0afeaff74834543f",
+      "key": "e61c3f0178f321bebcdb8f115587d754531033f89451352fdd7d5cac0b07d8fa",
+      "launcher_sha256": "8344235a023f809d08b1900bc57c4bfdbaa90b60071f326b111b2c13d1fcd469",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "mooncake",
+        "phase": "phase-1",
+        "qps": 1.0
+      },
+      "config_sha256": "2e0e50c3b9b485e436805baad1d072ed3950f1d5d591ad2a2b62db7257d70efc",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "8772dc38f89be2672d16a6b9bf116a5c83835ebd8a73cacaef8ce4224120b6e0",
+      "launcher_sha256": "c7c23c7745988075911ab90cc9cf9f6daadea5d6cf0447c92c181f4efb91998b",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "mooncake",
+        "phase": "phase-1",
+        "qps": 0.5
+      },
+      "config_sha256": "2e0e50c3b9b485e436805baad1d072ed3950f1d5d591ad2a2b62db7257d70efc",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "4509ebc4c6c09d20b41f998113b6d4fe9b81962d45f463315130325687a48513",
+      "launcher_sha256": "c7c23c7745988075911ab90cc9cf9f6daadea5d6cf0447c92c181f4efb91998b",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    },
+    {
+      "artifact_sha256": "d7c8edd3bf7a4c9e88b8b15eb24723e27bb3f674545847dc28f464e001187485",
+      "case": {
+        "mode": "mooncake",
+        "phase": "phase-1",
+        "qps": 0.1
+      },
+      "config_sha256": "2e0e50c3b9b485e436805baad1d072ed3950f1d5d591ad2a2b62db7257d70efc",
+      "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+      "key": "28e6c331b8d403c4a601a392899325b731600559e84fcf297a54bd38c9ccc679",
+      "launcher_sha256": "c7c23c7745988075911ab90cc9cf9f6daadea5d6cf0447c92c181f4efb91998b",
+      "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+    }
+  ],
+  "inherited_environment": {
+    "OMP_NUM_THREADS": "36",
+    "PATH": "/root/.nvm/versions/node/v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/root/miniconda3/bin:/usr/local/bin:/root/.codex/tmp/arg0/codex-arg0bVZmft:/root/.nvm/versions/node/v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/root/.local/bin:/root/.nvm/versions/node/v24.20.0/bin:/root/miniconda3/bin:/usr/local/bin:/root/miniconda3/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+  },
+  "input_hashes": {
+    "arrivals-0.1.json": "ae4587ac5c7aece4f557311b2720b980d2d6c4f18f21b863f33939d271590cea",
+    "arrivals-0.5.json": "8fa74f7f3f470ce06cb6de65c07d16d0aca77664c9c85d08e7e2739dd7439039",
+    "arrivals-1.0.json": "da53e5a9ef58619f9aad1fcc99cc232ab7233d8d385bdf388f869923b63aab40",
+    "code.json": "481c518881d1135e88696368c06d7364207eef3031c0a2622e36972273d5f48c",
+    "environment-baseline.json": "ecdcb03f19e1b3a38ba591b1a7302709eaf3008d4e14df2666d0228276c5b1b3",
+    "environment-source.json": "ed8a2d74fca7eaa021ebdb1a256deb302c156a3082556c35d6e12c734246aadd",
+    "environment-target.json": "d39d03b5f753aac1956de298d059ee4d56e620d86022df6ae757f9251cac81e1",
+    "hardware.json": "1675f5cd7efa21368c944a628123ca113a301f0d9cde1b19b371775f1f7bd7e7",
+    "launcher.json": "b77c253e5a4df225a7d672f3482b860a6eb5b28adccace5526e6796fbed5c3fa",
+    "packages-baseline.json": "6e1c0d568d91fca7edc9226b56a7974e827b68aebb69ac6275e3dfdbd116e7b9",
+    "packages-source.json": "e2458a7aa3db01b3e070f988401fe269cdbf1072161a51f27046aa65c36825d2",
+    "packages-target.json": "6e1c0d568d91fca7edc9226b56a7974e827b68aebb69ac6275e3dfdbd116e7b9",
+    "provenance.json": "8a2df0d6fd446d2298c06cf4214f47c3427750fda3ced95c41b90e34141c4bda",
+    "reference-launcher.json": "b0278f05757c4133c39ba2450104f4454140c0cd2e43327bdde4fa7c299bee4b",
+    "source-workload.input.json": "4a6153d6d11ef02bc84c23bd9be43d5a577e4176896155bb9fbd3c3f943be747",
+    "source-workload.json": "e57a762bca5e0bf97baa0afb6c5ef560e40c1f967798ce4a9a8135b0afd8afd3",
+    "workload.input.json": "4a6153d6d11ef02bc84c23bd9be43d5a577e4176896155bb9fbd3c3f943be747",
+    "workload.json": "e57a762bca5e0bf97baa0afb6c5ef560e40c1f967798ce4a9a8135b0afd8afd3"
+  },
+  "mooncake": {
+    "device_name": "",
+    "global_segment_size": 107374182400,
+    "local_buffer_size": 1073741824,
+    "local_hostname": "127.0.0.1",
+    "master_server_address": "127.0.0.1:50123",
+    "metadata_server": "P2PHANDSHAKE",
+    "protocol": "tcp"
+  },
+  "mooncake_master_sha256": "f556bce7055779b3d666c61720dc219576bbb2ce42cda1958b043b3aa21c14ba",
+  "parameters": {
+    "cpu_offload_gib": 100,
+    "dataset": "/root/TokenCake/vllm_agent/dataset/agentcodeclean_new.json",
+    "gpu_memory_utilization": 0.5,
+    "max_model_len": 32768,
+    "model": "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct",
+    "num_requests": 24,
+    "qps": [
+      1.0,
+      0.5,
+      0.1
+    ],
+    "seed": 42,
+    "workload_revision": "be5f23ca50818f74f485ea82f42138ec9506e1f0"
+  },
+  "tool_hashes": {
+    "__init__.py": "e3c55cbb0d7a8bd47df6f3378835644645f5d3bc89b45793b5d5a02d013e5c58",
+    "campaign.py": "7d1581e3ae32bea817cbccf1292750acde35658053e72aa131bb108f4ad7de5d",
+    "driver.py": "5600cf0745ea3ab6aed832882325e64480cc26515d0d15ae8fa6a172c5154e3e",
+    "launch_client.py": "393f154e92c9adbc9ecfc72eb677c24ae2b06c1a4d8a9a7289ab97c2ed9c6b01",
+    "launcher.patch": "07613eb608f333267cca69d6f0e624e60079ea11191d9c94193f3d8f10232235",
+    "materialize.py": "1d2b899be08c56106e4c16a17f582b26530ee7aa7c8d818463fea624903b25fb",
+    "preflight.py": "5c68d83f1227d8f4e0d05aa86888a9697bb5f0776b32126a2f863112dfbaf45e",
+    "provenance.py": "40426a582d2448b57f90e82f41d4622d29febe1142556e2781c24410e046f3b9",
+    "report.py": "581234ab691287154009864bcecbe116463eff2e79a088d951994df6b5dc2d97",
+    "runtime.py": "320f004a48e19fefa5cc4ddb5c7bc68e3e4501640d5c3f3cdf30a856c28299f9",
+    "scheduling_reference.py": "a98c46c1d8475b48b22763ad6aa974216cbe480702e1ae61132da9f4f9e94535",
+    "source_adapter.py": "62865f85fc6f438fbe04511347e69b8ed2ad2b4928dc26f5dc6222143849a8ee",
+    "verify_environment.py": "92311b5c1434f1b44a27850321f3e471e05584ae459cdeb6b8127fcf404096a5"
+  },
+  "workload_sha256": "1590183398f961e31fa1253252e7624a5ef8a64d1406c00610a4587f999f60ed"
+}

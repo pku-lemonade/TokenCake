@@ -1,0 +1,36 @@
+{
+  "available_host_bytes": 1047354142720,
+  "available_ports": [
+    8055,
+    8056
+  ],
+  "devices": [
+    {
+      "cpus": "0-35,72-107",
+      "index": 0,
+      "numa": 0,
+      "uuid": "GPU-dfe6761a-23f4-c34c-9c03-01da02020e5f"
+    },
+    {
+      "cpus": "36-71,108-143",
+      "index": 1,
+      "numa": 1,
+      "uuid": "GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087"
+    }
+  ],
+  "external_processes": [],
+  "gpus": [
+    {
+      "index": "0",
+      "memory.total": "81920",
+      "name": "NVIDIA A800-SXM4-80GB",
+      "uuid": "GPU-dfe6761a-23f4-c34c-9c03-01da02020e5f"
+    },
+    {
+      "index": "1",
+      "memory.total": "81920",
+      "name": "NVIDIA A800-SXM4-80GB",
+      "uuid": "GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087"
+    }
+  ]
+}

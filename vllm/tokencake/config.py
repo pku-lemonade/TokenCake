@@ -27,7 +27,7 @@ class SchedulingConfig:
     temporal_selection: TemporalSelection = "first_fit"
     """Selection order for eligible preservation windows."""
     critical_ratio: PositiveRatio = 0.75
-    """Cumulative importance share receiving reserved capacity."""
+    """Fraction of agent types receiving reserved capacity, ranked by importance."""
     reserve_ratio_min: Ratio = 0.05
     """Minimum reserved fraction of physical KV capacity."""
     reserve_ratio_max: Ratio = 0.30

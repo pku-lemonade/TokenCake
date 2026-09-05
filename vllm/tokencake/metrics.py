@@ -36,6 +36,7 @@ class Metric(str, Enum):
     SAVED = "saved_blocks.completed"
     DEFERRED = "scheduling.deferred"
     PREEMPTED = "scheduling.preempted"
+    PREFILL_CAPPED = "scheduling.prefill_capped"
 
 
 class TokenCakeMetrics:

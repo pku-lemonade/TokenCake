@@ -60,7 +60,7 @@
 
 ## 8. Execute Phase-1 End-To-End Acceptance
 
-- [ ] 8.1 Launch GPU0 native v0.22 baseline and GPU1 target agent-only queues concurrently at QPS `1.0`, `0.5`, then `0.1`, with a fresh server for every case; verify all six full 24-DAG cases qualify and persist complete artifacts.
+- [x] 8.1 Launch GPU0 native v0.22 baseline and GPU1 target agent-only queues concurrently at QPS `1.0`, `0.5`, then `0.1`, with a fresh server for every case; verify all six full 24-DAG cases qualify and persist complete artifacts.
 - [ ] 8.2 After GPU0 baseline, run target offload-agent Phase 1 on GPU0 at QPS `1.0`, `0.5`, then `0.1` while the independent GPU1 queue proceeds or becomes idle naturally; verify all three cases qualify, record the actual peer/idle state, and retain native/TokenCake transfer and scheduling metrics.
 - [ ] 8.3 Apply the accepted failure/gray-band rule to the native and agent-only target comparisons and run only the required additional pair members; verify no mode/QPS receives more than three total launches including exclusions, strict gates use qualifying medians, and an exhausted non-qualifying budget remains unresolved.
 - [ ] 8.4 After all target primary cases complete, start the unchanged latest-old offload-agent queue on GPU0 and the current Mooncake queue on GPU1 concurrently, each at QPS `1.0`, `0.5`, then `0.1`; verify the old results record `FINISHED_PREEMPTED` and Mooncake runs the full workload without connector errors.

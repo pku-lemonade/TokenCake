@@ -7,7 +7,8 @@ import json
 import time
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, JsonValue, model_validator
+from typing_extensions import Self
 
 from vllm.config import ModelConfig
 from vllm.config.utils import replace
@@ -30,6 +31,7 @@ from vllm.sampling_params import (
     SamplingParams,
     StructuredOutputsParams,
 )
+from vllm.tokencake.protocol import validate_request_metadata
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -167,12 +169,9 @@ class CompletionRequest(OpenAIBaseModel):
         description="KVTransfer parameters used for disaggregated serving.",
     )
 
-    vllm_xargs: dict[str, str | int | float] | None = Field(
+    vllm_xargs: dict[str, JsonValue] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with string or "
-            "numeric values, used by custom extensions."
-        ),
+        description="Additional JSON request parameters used by custom extensions.",
     )
 
     repetition_detection: RepetitionDetectionParams | None = Field(
@@ -341,6 +340,16 @@ class CompletionRequest(OpenAIBaseModel):
             repetition_detection=self.repetition_detection,
             thinking_token_budget=self.thinking_token_budget,
         )
+
+    @model_validator(mode="after")
+    def validate_tokencake(self) -> Self:
+        validate_request_metadata(
+            self.vllm_xargs,
+            self.request_id,
+            n=self.n,
+            use_beam_search=self.use_beam_search,
+        )
+        return self
 
     @model_validator(mode="before")
     @classmethod

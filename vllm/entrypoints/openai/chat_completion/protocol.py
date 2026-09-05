@@ -11,7 +11,8 @@ from openai.types.chat.chat_completion_audio import (
     ChatCompletionAudio as OpenAIChatCompletionAudio,
 )
 from openai.types.chat.chat_completion_message import Annotation as OpenAIAnnotation
-from pydantic import Field, PrivateAttr, model_serializer, model_validator
+from pydantic import Field, JsonValue, PrivateAttr, model_serializer, model_validator
+from typing_extensions import Self
 
 from vllm.config import ModelConfig
 from vllm.config.utils import replace
@@ -42,6 +43,7 @@ from vllm.sampling_params import (
     SamplingParams,
     StructuredOutputsParams,
 )
+from vllm.tokencake.protocol import validate_request_metadata
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -399,12 +401,9 @@ class ChatCompletionRequest(OpenAIBaseModel):
         description="KVTransfer parameters used for disaggregated serving.",
     )
 
-    vllm_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
+    vllm_xargs: dict[str, JsonValue] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with (list of) string or "
-            "numeric values, used by custom extensions."
-        ),
+        description="Additional JSON request parameters used by custom extensions.",
     )
 
     repetition_detection: RepetitionDetectionParams | None = Field(
@@ -643,6 +642,16 @@ class ChatCompletionRequest(OpenAIBaseModel):
             skip_clone=True,  # Created fresh per request, safe to skip clone
             repetition_detection=self.repetition_detection,
         )
+
+    @model_validator(mode="after")
+    def validate_tokencake(self) -> Self:
+        validate_request_metadata(
+            self.vllm_xargs,
+            self.request_id,
+            n=self.n,
+            use_beam_search=self.use_beam_search,
+        )
+        return self
 
     @model_validator(mode="before")
     @classmethod

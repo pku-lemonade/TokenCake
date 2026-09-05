@@ -19,9 +19,11 @@ Run the following from the target repository:
 ```bash
 uv venv .venv --python /root/autodl-tmp/conda_envs/mooncake_agent/bin/python --system-site-packages
 uv pip install --python .venv/bin/python -r requirements/lint.txt
+uv pip install --python .venv/bin/python 'ninja==1.13.2'
 uv pip install --python .venv/bin/python --no-deps /root/autodl-tmp/mooncake-api-check.TdlTNm/mooncake_transfer_engine-0.3.8-cp312-cp312-manylinux_2_17_x86_64.manylinux_2_35_x86_64.whl
 VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION=/root/autodl-tmp/vllm-wheels/vllm-0.22.0-cp38-abi3-manylinux_2_28_x86_64.whl uv pip install --python .venv/bin/python --no-deps -e . --torch-backend=auto
 .venv/bin/pre-commit install
+export PATH="$PWD/.venv/bin:$PATH"
 
 uv venv .venv/source/.venv --python /root/autodl-tmp/conda_envs/mooncake_agent/bin/python --system-site-packages
 uv pip install --python .venv/source/.venv/bin/python --no-deps --torch-backend cu124 'torch==2.6.0' 'torchaudio==2.6.0' 'torchvision==0.21.0' 'triton==3.2.0' 'compressed-tensors==0.9.3' 'depyf==0.18.0' 'llguidance==0.7.30' 'lm-format-enforcer==0.10.11' 'xgrammar==0.1.18' 'numba==0.61.2' 'llvmlite==0.44.0' 'nvidia-cusparselt-cu12==0.6.2' 'sympy==1.13.1'
@@ -90,3 +92,19 @@ CUDA_VISIBLE_DEVICES=GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087 PYTHONDONTWRITEBYT
 These tests compare actual transferred tensor contents. They establish the
 native data-path prerequisites and do not establish full-DAG correctness or
 any performance gate. Source and baseline tracked worktrees remained clean.
+
+## Stage 2 Validation
+
+See the change's `evidence/stage-2-validation.md` for commands and results.
+The model-backed HTTP tests use the full local Qwen2.5-14B-Instruct weights
+and compare actual generated text through completion, chat, and responses
+routes under all four enablement combinations. They establish API and
+connector-construction correctness for this stage; the accepted 24-DAG
+performance matrix remains a separate requirement.
+
+The v0.22 device-mapping implementation requires integer CUDA device indices
+when importing model kernels. Resolve each frozen GPU UUID to its current
+index before launching a server and verify the actual process UUID afterward.
+The stage-2 run used index 0, verified against the frozen GPU0 UUID.
+Runtime kernel compilation also requires the repo-local `ninja` executable
+on `PATH`; installing precompiled vLLM extensions alone does not supply it.

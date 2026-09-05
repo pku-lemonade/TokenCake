@@ -38,6 +38,7 @@ from vllm.v1.attention.backend import AttentionBackend, AttentionMetadata
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.kv_cache_interface import KVCacheConfig
+from vllm.v1.kv_offload.base import OffloadingSpec
 from vllm.v1.kv_offload.factory import OffloadingSpecFactory
 from vllm.v1.outputs import KVConnectorOutput
 from vllm.v1.request import Request
@@ -61,9 +62,12 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
         self.connector_scheduler: OffloadingConnectorScheduler | None = None
         self.connector_worker: OffloadingConnectorWorker | None = None
         if role == KVConnectorRole.SCHEDULER:
-            self.connector_scheduler = OffloadingConnectorScheduler(spec)
+            self.connector_scheduler = self._create_scheduler(spec)
         elif role == KVConnectorRole.WORKER:
             self.connector_worker = OffloadingConnectorWorker(spec)
+
+    def _create_scheduler(self, spec: OffloadingSpec) -> OffloadingConnectorScheduler:
+        return OffloadingConnectorScheduler(spec)
 
     def shutdown(self) -> None:
         if self.connector_worker is not None:

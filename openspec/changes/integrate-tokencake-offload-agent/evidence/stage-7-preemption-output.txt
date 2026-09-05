@@ -1,0 +1,20 @@
+/root/autodl-tmp/conda_envs/mooncake_agent/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+..............................................                           [100%]
+=============================== warnings summary ===============================
+../../autodl-tmp/conda_envs/mooncake_agent/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /root/autodl-tmp/conda_envs/mooncake_agent/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-local]
+tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-local]
+tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-local]
+tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-local]
+  /root/autodl-tmp/conda_envs/mooncake_agent/lib/python3.12/site-packages/triton/runtime/autotuner.py:101: DeprecationWarning: warmup, rep, and use_cuda_graph parameters are deprecated. See https://github.com/triton-lang/triton/pull/4496 for details.
+    warnings.warn(("warmup, rep, and use_cuda_graph parameters are deprecated. See "
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /root/TokenCake/vLLM-TokenCake-upstream/openspec/changes/integrate-tokencake-offload-agent/evidence/stage-7-preemption.xml -
+46 passed, 87 deselected, 18 warnings in 13.10s

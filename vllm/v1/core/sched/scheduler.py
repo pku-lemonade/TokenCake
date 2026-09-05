@@ -531,7 +531,11 @@ class Scheduler(SchedulerInterface):
                         preempted_req = agent_victim or max(
                             self.running, key=lambda r: (r.priority, r.arrival_time)
                         )
-                        victim_index = self.running.index(preempted_req)
+                        victim_index = (
+                            self.running.index(preempted_req)
+                            if agent_victim is not None
+                            else -1
+                        )
                         self.running.remove(preempted_req)
                         if preempted_req in scheduled_running_reqs:
                             preempted_req_id = preempted_req.request_id

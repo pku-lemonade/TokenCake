@@ -69,13 +69,14 @@ def wait_metric(client, server, name, previous=0, **labels):
 def test_preservation_native_reload_output_and_external_reset(offload_server):
     server = offload_server
     url = server.url_for("v1/completions")
+    prompt = (
+        "Preserved reference.\n"
+        + "This is reference context. " * 180
+        + "\nWrite consecutive integers starting at 1, separated by commas.\n1,"
+    )
     base = {
         "model": MODEL,
-        "prompt": (
-            "Preserved reference.\n"
-            + "This is reference context. " * 180
-            + "\nWrite consecutive integers starting at 1, separated by commas.\n1,"
-        ),
+        "prompt": prompt,
         "temperature": 0,
         "seed": 42,
         "max_tokens": 128,
@@ -108,9 +109,7 @@ def test_preservation_native_reload_output_and_external_reset(offload_server):
                 pool.submit(
                     client.post,
                     url,
-                    json=annotate(
-                        base | {"prompt": f"Eviction case {i}.\n" + base["prompt"]}
-                    ),
+                    json=annotate(base | {"prompt": f"Eviction case {i}.\n" + prompt}),
                 )
                 for i in range(12)
             ]

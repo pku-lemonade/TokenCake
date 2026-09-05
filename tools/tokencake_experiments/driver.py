@@ -226,7 +226,8 @@ class Runner:
             )
 
     def _load_results(self) -> list[dict]:
-        results = []
+        previous = self.root / "prior-exclusions.json"
+        results = json.loads(previous.read_text()) if previous.exists() else []
         for attempt_file in sorted(self.root.glob("cases/**/attempt.json")):
             path = attempt_file.with_name("result.json")
             if not path.exists():
@@ -363,6 +364,7 @@ class Runner:
         }
         write_json(case_dir / "attempt.json", attempt)
         processes: list[Process] = []
+        server: Process | None = None
         roots: list[int] = []
         self.activity.set(case.device, f"{case.name}/launch-{launch}", roots)
         execution = attempt | {
@@ -505,6 +507,8 @@ class Runner:
                     self._capture(port, "v1/mcp/debug", case_dir / "state_after.json")
         except Exception as exc:
             execution["error"] = f"{type(exc).__name__}: {exc}"
+            if server is not None:
+                execution["server_alive"] = server.process.poll() is None
         finally:
             for process in reversed(processes):
                 try:
@@ -512,6 +516,15 @@ class Runner:
                 except Exception as exc:
                     execution["error"] = f"Process cleanup failed: {exc}"
             self.activity.clear(case.device)
+        if (
+            execution["client_started_at"] is not None
+            and execution["client_finished_at"] is None
+        ):
+            execution["client_finished_at"] = time.time()
+            execution["client_end_monotonic"] = time.monotonic()
+            total_e2e_s = (
+                execution["client_end_monotonic"] - execution["client_start_monotonic"]
+            )
         execution["performance"] = {"total_e2e_s": total_e2e_s}
         execution["contamination"] = monitor.summary
         write_json(case_dir / "execution.json", execution)
@@ -560,7 +573,10 @@ class Runner:
                 if self.stop.is_set():
                     return
                 identity = self.by_case[case.name]
-                if initial and measurements(identity, self.results):
+                if initial and any(
+                    "budget_identity" not in row
+                    for row in measurements(identity, self.results)
+                ):
                     continue
                 self.run_case(identity)
 
@@ -611,13 +627,15 @@ def main() -> None:
     for command in ("prepare", "run", "report"):
         subparser = subparsers.add_parser(command)
         subparser.add_argument("run_root", type=Path)
+        if command == "prepare":
+            subparser.add_argument("--prior-exclusions", type=Path)
     args = parser.parse_args()
     if args.command == "plan":
         result = plan()
         if args.output:
             write_json(args.output, result)
     elif args.command == "prepare":
-        result = prepare(args.run_root)
+        result = prepare(args.run_root, prior_exclusions=args.prior_exclusions)
     else:
         # Hold the ledger lock for reports too, so a live attempt cannot be
         # mistaken for an interrupted one by a concurrent invocation.

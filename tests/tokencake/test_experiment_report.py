@@ -164,3 +164,30 @@ def test_forged_identity_and_input_mismatch_are_rejected():
         measurements(case, [row])
     with pytest.raises(ValueError, match="different frozen inputs"):
         compare(replace(identity("offload-agent"), workload_sha256="changed"), case, [])
+
+
+def test_correctness_repair_keeps_excluded_launch_charges():
+    original = identity("offload-agent")
+    repaired = replace(original, artifact_sha256="correctness-fix")
+    excluded = result(original, 0, qualifying=False) | {"budget_identity": repaired.key}
+    rows = [excluded, result(repaired, 80, 1), result(repaired, 82, 2)]
+    assert len(measurements(repaired, rows)) == 3
+    reference = identity("native")
+    report = compare(repaired, reference, rows + [result(reference, 100)])
+    assert report["target_median_s"] == 81
+    assert report["launches"][repaired.key] == 3
+    assert report["gate_inputs"][repaired.key] == [
+        row["result_path"] for row in rows[1:]
+    ]
+    with pytest.raises(ValueError, match="launch ledger"):
+        measurements(repaired, rows + [result(repaired, 83, 3)])
+    with pytest.raises(ValueError, match="Only exclusions"):
+        measurements(repaired, [excluded | {"qualifying": True}])
+    with pytest.raises(ValueError, match="different experiment contracts"):
+        measurements(
+            replace(repaired, config_sha256="different"),
+            [
+                excluded
+                | {"budget_identity": replace(repaired, config_sha256="different").key}
+            ],
+        )

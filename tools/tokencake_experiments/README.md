@@ -146,6 +146,14 @@ repo-local overrides. Frozen JSON inputs are hashed and checked before every
 launch, and recorded application arrivals must match the source-generated
 trace for that QPS.
 
+When a correctness repair interrupts a campaign before any qualifying result,
+`prepare NEW_DIRECTORY --prior-exclusions OLD_DIRECTORY` carries its excluded
+launch charges forward. Each original result identity and artifact path stays
+intact; only its budget attribution points at the repaired implementation.
+The phase, mode, QPS, workload, configuration and environment must match.
+Qualifying results cannot use this recovery path. Initial queues still start
+at high QPS, with the carried launches deducted from their existing limits.
+
 The target client applies `launcher.patch` to exact source commit
 `7a608a4e53ea990b2540c93b4d28cb795b905109`; only request/event protocol changes
 are applied. The wrapper aliases the relocated tokenizer import to the target

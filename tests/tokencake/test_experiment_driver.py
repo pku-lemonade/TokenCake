@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import replace
 
 import psutil
 import pytest
@@ -13,7 +14,11 @@ import pytest
 from tools.tokencake_experiments.campaign import DEVICES, ROOT, SOURCE, Case
 from tools.tokencake_experiments.driver import Runner, audit
 from tools.tokencake_experiments.materialize import digest, materialize
-from tools.tokencake_experiments.preflight import adapter, inherited_environment
+from tools.tokencake_experiments.preflight import (
+    adapter,
+    carry_exclusions,
+    inherited_environment,
+)
 from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
     Activity,
@@ -218,6 +223,46 @@ def test_interrupted_launch_is_persisted_and_counts_toward_budget(tmp_path):
     assert rows[0]["exclusion_reasons"] == ["interrupted_attempt"]
     assert path.with_name("result.json").exists()
     assert Runner(tmp_path).results == runner.results
+
+
+def test_recovery_keeps_first_qps_in_initial_queue(tmp_path, monkeypatch):
+    previous = tmp_path / "previous"
+    current = tmp_path / "current"
+    identity = Identity(
+        Case("native", 1.0), "code", "env", "launcher", "input", "config"
+    )
+    original = identity.payload()
+    case_dir = previous / "cases" / identity.case.name / "launch-0"
+    write_json(case_dir / "attempt.json", {"identity": original, "launch": 0})
+    write_json(
+        case_dir / "result.json",
+        {
+            "identity": original,
+            "launch": 0,
+            "qualifying": False,
+            "result_path": str(case_dir / "result.json"),
+        },
+    )
+    identities = [
+        replace(identity, case=Case("native", qps)) for qps in (1.0, 0.5, 0.1)
+    ]
+    exclusions = carry_exclusions(previous, identities)
+    assert exclusions[0]["identity"] == original
+    write_json(
+        current / "frozen.json", {"identities": [case.payload() for case in identities]}
+    )
+    write_json(current / "prior-exclusions.json", exclusions)
+    runner = Runner(current)
+    launched = []
+    monkeypatch.setattr(
+        runner,
+        "run_case",
+        lambda case: launched.append(
+            (case.case.qps, len(measurements(case, runner.results)))
+        ),
+    )
+    runner.run_queues([[case.case for case in identities]], initial=True)
+    assert launched == [(1.0, 1), (0.5, 0), (0.1, 0)]
 
 
 def test_process_affinity_and_child_cleanup(tmp_path):

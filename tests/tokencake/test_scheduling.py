@@ -327,6 +327,32 @@ def test_native_preemption_rollback_and_recomputation(victim_scheduled, margin):
     assert not controller.charges and not controller.metadata
 
 
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_running_reservation_denial_requeues_to_unblock_waiting_owner(policy):
+    scheduler = make_scheduler(num_blocks=11, policy=policy)
+    running = make_request("running", agent_type="borrower", tokens=128)
+    owner = make_request("owner", agent_type="owner", tokens=64, importance=100)
+    scheduler.add_request(running)
+    scheduler.waiting.remove_request(running)
+    scheduler.running.append(running)
+    running.status = RequestStatus.RUNNING
+    assert scheduler.kv_cache_manager.allocate_slots(running, 128) is not None
+    running.num_computed_tokens = 128
+    running.append_output_token_ids([100])
+    scheduler.add_request(owner)
+    controller = scheduler._tokencake_scheduling
+    controller.plan = CapacityPlan({"owner"}, {"owner": 100.0}, {"owner": 2}, 8)
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == 2
+    output = scheduler.schedule()
+    assert running.status == RequestStatus.PREEMPTED
+    assert running in scheduler.waiting and not running.is_finished()
+    assert not output.num_scheduled_tokens
+    resumed = scheduler.schedule()
+    assert "owner" in resumed.num_scheduled_tokens
+    scheduler.finish_requests("owner", RequestStatus.FINISHED_STOPPED)
+    assert "running" in scheduler.schedule().num_scheduled_tokens
+
+
 def test_scheduled_victim_restores_encoder_speculative_and_token_budgets():
     scheduler = make_scheduler(num_blocks=7, max_num_batched_tokens=64)
     scheduler.max_num_encoder_input_tokens = 8

@@ -497,19 +497,23 @@ class Scheduler(SchedulerInterface):
                 continue
 
             # Schedule newly needed KV blocks for the request.
-            if tokencake is not None and not tokencake.can_allocate(
-                request, num_new_tokens, num_lookahead_tokens=self.num_lookahead_tokens
-            ):
-                tokencake.defer(request)
-                req_index += 1
-                continue
             with record_function_or_nullcontext("schedule: allocate_slots"):
                 while True:
-                    new_blocks = self.kv_cache_manager.allocate_slots(
+                    if tokencake is not None and not tokencake.can_allocate(
                         request,
                         num_new_tokens,
                         num_lookahead_tokens=self.num_lookahead_tokens,
-                    )
+                    ):
+                        # A running reservation denial must release capacity
+                        # through native preemption so waiting owners can progress.
+                        tokencake.defer(request)
+                        new_blocks = None
+                    else:
+                        new_blocks = self.kv_cache_manager.allocate_slots(
+                            request,
+                            num_new_tokens,
+                            num_lookahead_tokens=self.num_lookahead_tokens,
+                        )
 
                     if new_blocks is not None:
                         # The request can be scheduled.
@@ -566,14 +570,6 @@ class Scheduler(SchedulerInterface):
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
                         # No more request to preempt. Cannot schedule this request.
-                        break
-                    if tokencake is not None and not tokencake.can_allocate(
-                        request,
-                        num_new_tokens,
-                        num_lookahead_tokens=self.num_lookahead_tokens,
-                    ):
-                        tokencake.defer(request)
-                        new_blocks = None
                         break
 
             if new_blocks is None:

@@ -20,6 +20,7 @@ from tools.tokencake_experiments.campaign import (
     PACKAGE,
     ROOT,
     SOURCE,
+    Case,
     initial_queues,
     server_command,
     workload_parameters,
@@ -31,7 +32,7 @@ from tools.tokencake_experiments.materialize import (
     materialize,
 )
 from tools.tokencake_experiments.provenance import capture
-from tools.tokencake_experiments.report import Identity, content_hash
+from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
     cpu_set,
     free_port,
@@ -166,7 +167,28 @@ def verify_code() -> dict[str, dict]:
     return result
 
 
-def prepare(run_root: Path) -> dict:
+def carry_exclusions(previous: Path, identities: list[Identity]) -> list[dict]:
+    lookup = {identity.case.name: identity for identity in identities}
+    results = []
+    inherited = previous / "prior-exclusions.json"
+    paths = sorted(previous.glob("cases/**/result.json"))
+    rows = json.loads(inherited.read_text()) if inherited.exists() else []
+    rows.extend(json.loads(path.read_text()) for path in paths)
+    if len(paths) != len(list(previous.glob("cases/**/attempt.json"))):
+        raise RuntimeError("Prior campaign has unfinished attempts")
+    for row in rows:
+        if row.get("qualifying"):
+            raise ValueError("This recovery only transfers excluded launch charges")
+        case = Case(**row["identity"]["case"])
+        target = lookup[case.name]
+        carried = row | {"budget_identity": target.key}
+        results.append(carried)
+    for identity in identities:
+        measurements(identity, results)
+    return results
+
+
+def prepare(run_root: Path, *, prior_exclusions: Path | None = None) -> dict:
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=False)
     write_json(run_root / "hardware.json", hardware_preflight())
@@ -305,6 +327,18 @@ def prepare(run_root: Path) -> dict:
                     ),
                 )
                 identities.append(identity.payload())
+    if prior_exclusions is not None:
+        ledger = carry_exclusions(
+            prior_exclusions.resolve(),
+            [
+                Identity(
+                    Case(**payload["case"]),
+                    **{k: v for k, v in payload.items() if k not in ("case", "key")},
+                )
+                for payload in identities
+            ],
+        )
+        write_json(run_root / "prior-exclusions.json", ledger)
     frozen = {
         "parameters": parameters,
         "code": code,

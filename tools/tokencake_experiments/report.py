@@ -45,7 +45,11 @@ class Identity:
 
 def measurements(identity: Identity, results: list[dict]) -> list[dict]:
     rows = sorted(
-        (r for r in results if r["identity"]["key"] == identity.key),
+        (
+            r
+            for r in results
+            if r.get("budget_identity", r["identity"]["key"]) == identity.key
+        ),
         key=lambda r: r["launch"],
     )
     numbers = [row["launch"] for row in rows]
@@ -53,7 +57,32 @@ def measurements(identity: Identity, results: list[dict]) -> list[dict]:
     if numbers != list(range(len(rows))) or len(rows) > limit:
         raise ValueError(f"Invalid launch ledger for {identity.case.name}: {numbers}")
     for row in rows:
-        if row["identity"] != identity.payload():
+        actual = row["identity"]
+        if (
+            content_hash({k: v for k, v in actual.items() if k != "key"})
+            != actual["key"]
+        ):
+            raise ValueError("Result identity does not match its recorded hash")
+        if "budget_identity" in row:
+            if row.get("qualifying") or actual["case"] != identity.payload()["case"]:
+                raise ValueError(
+                    "Only exclusions from the same phase/mode/QPS "
+                    "may carry a launch charge"
+                )
+            if any(
+                actual[key] != identity.payload()[key]
+                for key in (
+                    "environment_sha256",
+                    "launcher_sha256",
+                    "workload_sha256",
+                    "config_sha256",
+                )
+            ):
+                raise ValueError(
+                    "An exclusion cannot transfer between different "
+                    "experiment contracts"
+                )
+        elif actual != identity.payload():
             raise ValueError("Result identity does not match its recorded hash")
         if row.get("qualifying"):
             duration = row.get("performance", {}).get("total_e2e_s")

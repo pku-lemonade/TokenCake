@@ -44,6 +44,9 @@ For NixlConnector, you may also specify one or multiple NIXL_Backend. Such as:
   --kv-transfer-config '{"kv_connector":"OffloadingConnector","kv_role":"kv_both","kv_connector_extra_config":{"block_size": 64, "cpu_bytes_to_use": 1000000000}}'
   ```
 
+  [TokenCake](tokencake.md) extends native CPU offload with optional agent
+  scheduling and application lifecycle events for selective prefix preservation.
+
 - **FlexKVConnectorV1**: refer to [examples/disaggregated/flexkv_connector/prefix_caching_flexkv.py](../../examples/disaggregated/flexkv_connector/prefix_caching_flexkv.py) for the example usage of FlexKVConnectorV1. FlexKV is a distributed KV Store and multi-level cache management system for ultra-large-scale LLM inference.
 
   ```bash

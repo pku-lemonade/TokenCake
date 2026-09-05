@@ -1,0 +1,87 @@
+diff --git a/vllm_serving.py b/vllm_serving.py
+--- a/vllm_serving.py
++++ b/vllm_serving.py
+@@ -10,2 +10,3 @@
+ import httpx
+ from pathlib import Path
++import uuid as tokencake_uuid
+@@ -201,4 +202,5 @@
+ async def async_post(url, json_data):
+     async with aiohttp.ClientSession() as session:
+         async with session.post(url, json=json_data) as resp:
++            resp.raise_for_status()
+             return await resp.text()
+@@ -305,1 +307,1 @@
+-    async def call_vllm_api(prompt: str, node: Node, MODEL_PATH: str, max_tokens: int):
++    async def call_vllm_api(prompt: str, node: Node, MODEL_PATH: str, max_tokens: int, attempt_id: str):
+@@ -351,3 +353,22 @@
+-            "agent_info": agent_info,
++            "request_id": attempt_id,
+         }
++        if args.tokencake_mode != "native":
++            names = {
++                "name": "agent_name", "type": "agent_type",
++                "priority": "importance",
++                "app_start_time": "application_started_at_s",
++                "app_start_offset": "application_start_offset_s",
++                "app_elapsed_time": "application_elapsed_s",
++                "app_max_depth": "application_max_depth",
++            }
++            fields = (
++                *names, "depth", "in_degree", "out_degree", "similarity",
++                "remaining_depth", "critical_path", "near_completion",
++                "join_group", "dependency_depth", "fanout_width",
++                "memory_weight", "offload_eligible", "reusable_prefix",
++            )
++            data["vllm_xargs"] = {"tokencake": {
++                "lifecycle_id": attempt_id,
++                **{names.get(key, key): agent_info[key]
++                   for key in fields if key in agent_info},
++            }}
+@@ -362,6 +383,7 @@
+         node: Node,
+         prompt: str,
+-        max_tokens: int
++        max_tokens: int,
++        attempt_id: str,
+@@ -368,1 +390,1 @@
+-            completion_task = asyncio.create_task(call_vllm_api(prompt, node, MODEL_PATH, max_tokens))
++            completion_task = asyncio.create_task(call_vllm_api(prompt, node, MODEL_PATH, max_tokens, attempt_id))
+@@ -384,5 +406,11 @@
+         while retry_count <= MAX_RETRY_COUNT:
++            attempt_id = f"tc-{tokencake_uuid.uuid4().hex}"
++            print("[TokenCakeAttempt] " + json.dumps({
++                "application_id": id, "node": node.name,
++                "attempt": retry_count, "request_id": attempt_id,
++                "prompt_chars": len(prompt),
++            }), flush=True)
+             llm_completion, error_msg = await send_request_with_timeout(
+-                node, prompt, max_new_tokens
++                node, prompt, max_new_tokens, attempt_id
+             )
+@@ -390,1 +418,1 @@
+-                completion_id = completion["id"]
++                completion_id = attempt_id
+@@ -513,4 +541,8 @@
+-                    "request_id": request_id,
+-                    "estimated_time": estimated_tool_latency,
+-                    "request_type": node.mcp_function.name,
++                    "event": "stall_started",
++                    "lifecycle_id": request_id,
++                    "kind": node.mcp_function.name,
++                    **({"estimated_duration_s": estimated_tool_latency}
++                       if estimated_tool_latency > 0 else {}),
+@@ -529,1 +561,1 @@
+-                    {"request_id": request_id, "request_type": node.mcp_function.name},
++                    {"event": "stall_finished", "lifecycle_id": request_id},
+@@ -825,2 +857,6 @@
+     parser.add_argument("--disable_mcp_notifications", action="store_true")
++    parser.add_argument("--tokencake-mode", required=True,
++                        choices=["native", "agent", "offload-agent"])
+     args = parser.parse_args()
++    args.disable_mcp_notifications = args.tokencake_mode != "offload-agent"
+@@ -830,2 +866,2 @@
+-    MCP_URL = f"http://localhost:{args.port}/v1/mcp"
+-    MCP_FINISHED_URL = f"http://localhost:{args.port}/v1/mcp/finished"
++    MCP_URL = f"http://localhost:{args.port}/v1/tokencake/events"
++    MCP_FINISHED_URL = MCP_URL

@@ -108,3 +108,69 @@ index before launching a server and verify the actual process UUID afterward.
 The stage-2 run used index 0, verified against the frozen GPU0 UUID.
 Runtime kernel compilation also requires the repo-local `ninja` executable
 on `PATH`; installing precompiled vLLM extensions alone does not supply it.
+
+## Acceptance Campaign
+
+This target-owned driver implements the fixed acceptance matrix in
+`openspec/changes/integrate-tokencake-offload-agent`. It requires the two declared
+A800s, their recorded NUMA CPU sets, the local 14B model, the frozen source
+checkout, and the isolated target/source environments described in that change.
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.driver plan
+.venv/bin/python -m tools.tokencake_experiments.driver prepare \
+  /root/autodl-tmp/tokencake-acceptance/phase-1
+.venv/bin/python -m tools.tokencake_experiments.driver run \
+  /root/autodl-tmp/tokencake-acceptance/phase-1
+.venv/bin/python -m tools.tokencake_experiments.driver report \
+  /root/autodl-tmp/tokencake-acceptance/phase-1
+```
+
+`plan` only renders the fifteen initial cases. `prepare` verifies hardware,
+packages, extensions, model shards, dataset and repository state, materializes
+disposable launchers, and checks that target and source environments construct
+the identical 24-DAG workload and arrival traces. The destination must be new.
+There are no workload truncation or smoke options in this driver.
+
+`run` starts a fresh server per case and executes the two independent queues.
+Only affected comparison members receive repeats, including excluded launches
+in the three-launch maximum. Mooncake has one launch per QPS. Both clients and
+servers use their assigned GPU/NUMA affinity. Ctrl-C, SIGTERM and SIGHUP stop
+the queues and clean up launched process groups. A campaign lock prevents two
+drivers or a reporting process from modifying a live launch ledger. A resumed
+campaign retains interrupted launches as exclusions and verifies its frozen
+inputs before continuing.
+
+The target client applies `launcher.patch` to exact source commit
+`7a608a4e53ea990b2540c93b4d28cb795b905109`; only request/event protocol changes
+are applied. The wrapper aliases the relocated tokenizer import to the target
+vLLM tokenizer package. The source DAG execution and analyzer stay unchanged.
+Latest-old runs use the original checkout and source environment. The current
+Mooncake reference uses the target environment and the unpatched source client
+with its existing notification-disable flag.
+
+Mooncake configuration is read from frozen tokencake-mooncake commit
+`696c9a14f30ffeacda1707e8f712b7a214460be6`, with a fresh local master address,
+a 100 GiB embedded store and a 1 GiB local buffer, using TCP/P2PHANDSHAKE. The
+source configuration's 64 MiB example pool is unsuitable for the full workload;
+the old helper's 1 TiB default exceeds available host memory with the concurrent
+100 GiB old offload server. The explicit capacity and configuration overrides
+are included in the plan and identity. No SSD or external Mooncake service is
+used. Current native Mooncake operation counters supply store/error evidence;
+the original analyzer output is retained alongside this telemetry adaptation.
+
+Each case directory contains its launch identity, commands, full server config,
+before/after metrics, raw client/server output, completed application results,
+request retry traces, process/affinity/thermal samples and concurrent peer
+identity. `result.json` hashes the available artifacts and records qualification
+and exclusions. Campaign reports include the exact result paths used in each
+median. The primary interval runs from client process launch to exit, excluding
+server initialization. Latencies, tokens, retries, transfers and thermal samples
+are diagnostic; only `performance.total_e2e_s` drives the specified hard gates.
+
+A work-inequivalent old result or an exhausted non-qualifying budget remains an
+explicit unresolved decision. The report functions support separately identified
+Phase-2 results and require a recorded reference-equivalence proof before reuse.
+They never pool Phase-1 target measurements with a changed Phase-2 target.
+Phase-2 execution requires the attribution and scope decision specified by the
+change; it is not an automatic tuning loop.

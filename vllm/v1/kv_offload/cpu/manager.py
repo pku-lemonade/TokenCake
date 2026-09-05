@@ -127,6 +127,24 @@ class CPUOffloadingManager(OffloadingManager):
     def touch(self, keys: Collection[OffloadKey], req_context: ReqContext) -> None:
         self._policy.touch(keys)
 
+    def retain(self, keys: Iterable[OffloadKey]) -> set[OffloadKey]:
+        """Retain each distinct ready key using the existing eviction refcount."""
+        retained: set[OffloadKey] = set()
+        for key in set(keys):
+            block = self._policy.get(key)
+            if block is not None and block.is_ready:
+                block.ref_cnt += 1
+                retained.add(key)
+        return retained
+
+    def release(self, keys: Collection[OffloadKey]) -> None:
+        """Release one retained reference per key without evicting cache data."""
+        blocks = [self._policy.get(key) for key in set(keys)]
+        assert all(block is not None and block.ref_cnt > 0 for block in blocks)
+        for block in blocks:
+            assert block is not None
+            block.ref_cnt -= 1
+
     def complete_load(
         self, keys: Collection[OffloadKey], req_context: ReqContext
     ) -> None:

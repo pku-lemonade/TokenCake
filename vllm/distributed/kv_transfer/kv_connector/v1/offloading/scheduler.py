@@ -647,6 +647,9 @@ class OffloadingConnectorScheduler:
         if self._blocks_being_loaded is not None:
             self._blocks_being_loaded.update(keys_to_load)
 
+    def _defer_store(self, request: Request) -> bool:
+        return False
+
     def _build_store_jobs(
         self,
         scheduler_output: SchedulerOutput,
@@ -678,6 +681,9 @@ class OffloadingConnectorScheduler:
                             for bid in new_blocks_flat
                             for jid in self._block_id_to_pending_jobs.get(bid, ())
                         )
+
+            if self._defer_store(req):
+                continue
 
             num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
             num_tokens_after_batch = req.num_computed_tokens + num_scheduled_tokens

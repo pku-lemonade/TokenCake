@@ -32,6 +32,8 @@ from vllm.logging_utils.dump_input import dump_engine_exception
 from vllm.lora.request import LoRARequest
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.tasks import POOLING_TASKS, SupportedTask
+from vllm.tokencake.events import LifecycleEvent, LifecycleEventResult
+from vllm.tokencake.lifecycle import DuplicateLifecycleError
 from vllm.tracing import instrument, maybe_init_worker_tracer
 from vllm.transformers_utils.config import maybe_register_config_serialize_by_value
 from vllm.utils import numa_utils
@@ -627,6 +629,20 @@ class EngineCore:
             self.mm_receiver_cache.clear_cache()
 
         self.model_executor.reset_mm_cache()
+
+    def tokencake_event(self, event: LifecycleEvent) -> LifecycleEventResult:
+        from vllm.tokencake.offloading import TokenCakeConnector
+
+        connector = self.scheduler.get_kv_connector()
+        if not isinstance(connector, TokenCakeConnector):
+            return LifecycleEventResult(
+                event.lifecycle_id, event.event, "unavailable", "unavailable", 503
+            )
+        scheduler = connector.tokencake_scheduler
+        result = scheduler.lifecycles.apply(event)
+        if result.disposition == "applied" and event.event == "stall_started":
+            scheduler.evaluate_pending()
+        return result
 
     def reset_prefix_cache(
         self, reset_running_requests: bool = False, reset_connector: bool = False
@@ -1302,7 +1318,11 @@ class EngineCoreProc(EngineCore):
             req, request_wave = request
             if self._reject_add_in_shutdown(req):
                 return
-            self.add_request(req, request_wave)
+            try:
+                self.add_request(req, request_wave)
+            except DuplicateLifecycleError:
+                logger.warning("Rejected a duplicate TokenCake generation lifecycle")
+                self._send_error_outputs_to_client([req.request_id], req.client_index)
         elif request_type == EngineCoreRequestType.ABORT:
             self.abort_requests(request)
         elif request_type == EngineCoreRequestType.UTILITY:
@@ -1315,9 +1335,21 @@ class EngineCoreProc(EngineCore):
                 (method := getattr(self, method_name))
                 and method(*self._convert_msgspec_args(method, args))
             )
-            enqueue_output = lambda out: self.output_queue.put_nowait(
-                (client_idx, EngineCoreOutputs(utility_output=out))
-            )
+
+            def enqueue_output(out):
+                self.output_queue.put_nowait(
+                    (client_idx, EngineCoreOutputs(utility_output=out))
+                )
+                if method_name == "tokencake_event":
+                    self.output_queue.put_nowait(
+                        (
+                            client_idx,
+                            EngineCoreOutputs(
+                                scheduler_stats=self.scheduler.make_stats()
+                            ),
+                        )
+                    )
+
             self._invoke_utility_method(method_name, get_result, output, enqueue_output)
         elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
             raise RuntimeError("Executor failed.")

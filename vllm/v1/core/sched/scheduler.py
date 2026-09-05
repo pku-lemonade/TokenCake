@@ -5,7 +5,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vllm.compilation.cuda_graph import CUDAGraphStat
 from vllm.config import VllmConfig
@@ -29,6 +29,7 @@ from vllm.model_executor.layers.fused_moe.routed_experts_capturer import (
 )
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from vllm.multimodal.encoder_budget import MultiModalBudget
+from vllm.tokencake.protocol import metadata_from_extra_args
 from vllm.v1.core.encoder_cache_manager import (
     EncoderCacheManager,
     EncoderDecoderCacheManager,
@@ -59,6 +60,10 @@ from vllm.v1.structured_output import StructuredOutputManager
 from vllm.v1.utils import record_function_or_nullcontext
 
 logger = init_logger(__name__)
+
+if TYPE_CHECKING:
+    from vllm.tokencake.lifecycle import GenerationCause, LifecycleRegistry
+    from vllm.tokencake.offloading import TokenCakeConnector
 
 
 class Scheduler(SchedulerInterface):
@@ -240,6 +245,27 @@ class Scheduler(SchedulerInterface):
         if self.connector is not None:
             self.connector.bind_gpu_block_pool(self.kv_cache_manager.block_pool)
 
+        self._tokencake_lifecycles: LifecycleRegistry | None = None
+        self._tokencake_connector: TokenCakeConnector | None = None
+        settings = vllm_config._tokencake_config
+        if settings is not None and (
+            settings.scheduling.enabled or settings.offload.enabled
+        ):
+            from vllm.tokencake import lifecycle
+
+            if settings.offload.enabled:
+                from vllm.tokencake import offloading
+
+                assert isinstance(self.connector, offloading.TokenCakeConnector)
+                self._tokencake_connector = self.connector
+                self._tokencake_lifecycles = (
+                    self.connector.tokencake_scheduler.lifecycles
+                )
+            else:
+                self._tokencake_lifecycles = lifecycle.LifecycleRegistry(
+                    settings.offload
+                )
+
         self.use_pp = self.parallel_config.pipeline_parallel_size > 1
         self.use_v2_model_runner = vllm_config.use_v2_model_runner
         self.scheduler_reserve_full_isl = (
@@ -360,6 +386,11 @@ class Scheduler(SchedulerInterface):
         scheduled_timestamp = time.monotonic()
 
         self.kv_cache_manager.new_step_starts()
+
+        if self._tokencake_lifecycles is not None:
+            self._tokencake_lifecycles.expire()
+        if self._tokencake_connector is not None:
+            self._tokencake_connector.tokencake_scheduler.evaluate_pending()
 
         # First, schedule the RUNNING requests.
         req_index = 0
@@ -1753,6 +1784,13 @@ class Scheduler(SchedulerInterface):
         return len(self.running), len(self.waiting) + len(self.skipped_waiting)
 
     def add_request(self, request: Request) -> None:
+        if (
+            self._tokencake_lifecycles is not None
+            and request.sampling_params is not None
+        ):
+            metadata = metadata_from_extra_args(request.sampling_params.extra_args)
+            if metadata is not None:
+                self._tokencake_lifecycles.associate(request.request_id, metadata)
         existing = self.requests.get(request.request_id)
         if existing is not None:
             update = StreamingUpdate.from_request(request)
@@ -1844,6 +1882,25 @@ class Scheduler(SchedulerInterface):
     ) -> dict[str, Any] | None:
         assert request.is_finished()
 
+        if self._tokencake_lifecycles is not None and self._tokencake_connector is None:
+            params = request.sampling_params
+            metadata = (
+                (params.extra_args or {}).get("tokencake")
+                if params is not None
+                else None
+            )
+            if metadata is not None:
+                cause: GenerationCause = (
+                    "aborted"
+                    if request.status == RequestStatus.FINISHED_ABORTED
+                    else "error"
+                    if request.status
+                    in (RequestStatus.FINISHED_ERROR, RequestStatus.FINISHED_IGNORED)
+                    else "completed"
+                )
+                self._tokencake_lifecycles.generation_finished(
+                    metadata["lifecycle_id"], cause
+                )
         connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
         self.encoder_cache_manager.free(request)
         request_id = request.request_id
@@ -1882,6 +1939,11 @@ class Scheduler(SchedulerInterface):
         return num_waiting + len(self.running)
 
     def has_finished_requests(self) -> bool:
+        if (
+            self._tokencake_lifecycles is not None
+            and self._tokencake_lifecycles.has_pending_evaluation
+        ):
+            return True
         if self.finished_req_ids:
             return True
         if self.connector is None:
@@ -1930,6 +1992,8 @@ class Scheduler(SchedulerInterface):
             self.prev_step_scheduled_req_ids.clear()
 
         reset_successful = self.kv_cache_manager.reset_prefix_cache()
+        if reset_successful and self._tokencake_lifecycles is not None:
+            self._tokencake_lifecycles.invalidate_snapshots()
         if reset_running_requests and not reset_successful:
             raise RuntimeError(
                 "Failed to reset KV cache even when all the running requests are "
@@ -1999,6 +2063,11 @@ class Scheduler(SchedulerInterface):
             kv_cache_eviction_events=eviction_events,
             spec_decoding_stats=spec_stats,
             kv_connector_stats=connector_stats_payload,
+            tokencake_stats=(
+                self._tokencake_lifecycles.stats()
+                if self._tokencake_lifecycles is not None
+                else None
+            ),
             cudagraph_stats=cudagraph_stats,
             perf_stats=perf_stats,
         )

@@ -486,6 +486,23 @@ class BlockPool:
 
         return True
 
+    def peek_free_block_frontier(
+        self, limit: int
+    ) -> tuple[tuple[int, BlockHashWithGroupId | None], ...]:
+        """Observe a bounded eviction prefix without touching blocks or LRU order."""
+        assert limit >= 0
+        result: list[tuple[int, BlockHashWithGroupId | None]] = []
+        queue = self.free_block_queue
+        block = queue.fake_free_list_head.next_free_block
+        while (
+            block is not None
+            and block is not queue.fake_free_list_tail
+            and len(result) < limit
+        ):
+            result.append((block.block_id, block.block_hash))
+            block = block.next_free_block
+        return tuple(result)
+
     def get_num_free_blocks(self) -> int:
         """Get the number of free blocks in the pool.
 

@@ -424,7 +424,14 @@ class SchedulingController:
             yield request, queue
 
     def prefill_limit(
-        self, request: Request, tokens: int, backlog: bool, running: int, maximum: int
+        self,
+        request: Request,
+        tokens: int,
+        backlog: bool,
+        running: int,
+        maximum: int,
+        *,
+        record_metric: bool = True,
     ) -> int:
         if (
             tokens > 256
@@ -433,7 +440,8 @@ class SchedulingController:
                 backlog or running >= max(2, maximum // 2) or self.manager.usage >= 0.8
             )
         ):
-            self.metrics.count(Metric.PREFILL_CAPPED)
+            if record_metric:
+                self.metrics.count(Metric.PREFILL_CAPPED)
             return 256
         return tokens
 

@@ -399,14 +399,17 @@ class Scheduler(SchedulerInterface):
 
         if self._tokencake_lifecycles is not None:
             self._tokencake_lifecycles.expire()
-        if self._tokencake_connector is not None:
-            self._tokencake_connector.tokencake_scheduler.evaluate_pending()
-
         tokencake = self._tokencake_scheduling
         if tokencake is not None and not tokencake.begin_step(
             itertools.chain(self.skipped_waiting, self.waiting), self.running
         ):
             tokencake = None
+        if self._tokencake_connector is not None:
+            offload = self._tokencake_connector.tokencake_scheduler
+            offload.evaluate_pending(self, new_step=True)
+            if offload.has_unpublished:
+                # The native worker submits these stores at the next step's start.
+                token_budget = 0
 
         # First, schedule the RUNNING requests.
         req_index = 0
@@ -2060,6 +2063,11 @@ class Scheduler(SchedulerInterface):
         return num_waiting + len(self.running)
 
     def has_finished_requests(self) -> bool:
+        if (
+            self._tokencake_connector is not None
+            and self._tokencake_connector.tokencake_scheduler.has_pending_work
+        ):
+            return True
         if (
             self._tokencake_lifecycles is not None
             and self._tokencake_lifecycles.has_pending_evaluation

@@ -632,16 +632,19 @@ class EngineCore:
 
     def tokencake_event(self, event: LifecycleEvent) -> LifecycleEventResult:
         from vllm.tokencake.offloading import TokenCakeConnector
+        from vllm.v1.core.sched.scheduler import Scheduler
 
         connector = self.scheduler.get_kv_connector()
-        if not isinstance(connector, TokenCakeConnector):
+        if not isinstance(connector, TokenCakeConnector) or not isinstance(
+            self.scheduler, Scheduler
+        ):
             return LifecycleEventResult(
                 event.lifecycle_id, event.event, "unavailable", "unavailable", 503
             )
         scheduler = connector.tokencake_scheduler
         result = scheduler.lifecycles.apply(event)
         if result.disposition == "applied" and event.event == "stall_started":
-            scheduler.evaluate_pending()
+            scheduler.evaluate_pending(self.scheduler)
         return result
 
     def reset_prefix_cache(

@@ -66,8 +66,11 @@ class Lifecycle:
     release_deadline: float = float("inf")
     ownership_released: bool = False
     retained: set[OffloadKey] = field(default_factory=set)
+    pending_retention: set[OffloadKey] = field(default_factory=set)
     pending_evaluation: bool = False
     next_evaluation_step: int = 0
+    backoff_signature: tuple[int, ...] | None = None
+    last_store_step: int = -5
     terminal_cause: TerminalCause | None = None
     terminal_at: float | None = None
     finish_accepted: bool = False
@@ -236,6 +239,7 @@ class LifecycleRegistry:
 
     def release(self, record: Lifecycle) -> None:
         keys, record.retained = record.retained, set()
+        record.pending_retention.clear()
         record.ownership_released = True
         if keys:
             assert self.manager is not None
@@ -247,6 +251,8 @@ class LifecycleRegistry:
         self.release(record)
         record.snapshot = None
         record.pending_evaluation = False
+        record.next_evaluation_step = 0
+        record.backoff_signature = None
         record.terminal_cause, record.terminal_at = cause, now
         self.metrics.count(Metric(f"lifecycle.{cause}"))
 

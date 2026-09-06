@@ -153,6 +153,28 @@ cannot pass the complete acceptance matrix. Newly prepared campaigns require
 threshold. Optional `--gpu 0` or `--gpu 1` creates an explicit placement identity;
 omitting it preserves the historical identity representation.
 
+The optional `--workload-profile continuation` applies `continuation.patch`
+to disposable launchers for an explicitly requested native/TokenCake subset.
+It removes the second copy of the role instruction on the five same-role
+validation-to-repair edges. Each DAG still has 27 model calls, the same output
+budgets, tool windows, graph structure, dataset and arrivals. The frozen
+contract records `input_composition="same-role-prefix-v1"`; launcher hashes
+also include the revised composer. Source and reference environments must
+construct matching revised contracts. The source checkout remains unchanged.
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.driver prepare \
+  /root/autodl-tmp/tokencake-optimization/continuation \
+  --snapshot-target --workload-profile continuation \
+  --mode native --mode offload-agent --qps 1.0
+```
+
+This profile requires a fresh native baseline on the same revised workload.
+Old-workload timing is not a valid reference for its percentage improvement.
+Generated downstream inputs can vary with model and tool outputs, so equality
+is established for the workload construction rules, initial inputs, declared
+budgets and arrival trace, rather than every generated downstream byte.
+
 `run` starts a fresh server per case and executes the two independent queues.
 Only affected comparison members receive repeats, including excluded launches
 in the three-launch maximum. Mooncake has one launch per QPS. Both clients and
@@ -175,7 +197,7 @@ The phase, mode, QPS, workload, configuration and environment must match.
 Qualifying results cannot use this recovery path. Initial queues still start
 at high QPS, with the carried launches deducted from their existing limits.
 
-The target client applies `launcher.patch` to exact source commit
+By default, the target client applies `launcher.patch` to exact source commit
 `7a608a4e53ea990b2540c93b4d28cb795b905109`; only request/event protocol changes
 are applied. The wrapper aliases the relocated tokenizer import to the target
 vLLM tokenizer package. The source DAG execution and analyzer stay unchanged.

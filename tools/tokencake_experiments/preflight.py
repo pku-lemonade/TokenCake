@@ -27,6 +27,7 @@ from tools.tokencake_experiments.campaign import (
 )
 from tools.tokencake_experiments.materialize import (
     SOURCE_REVISION,
+    WORKLOAD_PROFILES,
     digest,
     git,
     materialize,
@@ -208,7 +209,17 @@ def prepare(
     prior_exclusions: Path | None = None,
     snapshot_target: bool = False,
     cases: list[Case] | None = None,
+    workload_profile: str = "frozen",
 ) -> dict:
+    if workload_profile not in WORKLOAD_PROFILES:
+        raise ValueError(f"Unknown workload profile: {workload_profile}")
+    if workload_profile != "frozen" and (
+        not cases
+        or any(case.mode not in ("native", "agent", "offload-agent") for case in cases)
+    ):
+        raise ValueError(
+            "Continuation workload requires explicit native or TokenCake cases"
+        )
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=False)
     write_json(run_root / "hardware.json", hardware_preflight())
@@ -242,16 +253,27 @@ def prepare(
         )
     )
     write_json(run_root / "provenance.json", provenance)
-    launcher = materialize(SOURCE, run_root / "launcher")
+    launcher = materialize(
+        SOURCE, run_root / "launcher", workload_profile=workload_profile
+    )
     reference_launcher = materialize(
-        SOURCE, run_root / "reference-launcher", patched=False
+        SOURCE,
+        run_root / "reference-launcher",
+        patched=False,
+        workload_profile=workload_profile,
     )
     write_json(run_root / "launcher.json", launcher)
     write_json(run_root / "reference-launcher.json", reference_launcher)
     parameters = workload_parameters()
+    if workload_profile == "continuation":
+        parameters["input_composition"] = "same-role-prefix-v1"
     adapter("freeze", run_root / "launcher", parameters, run_root / "workload.json")
     adapter(
-        "freeze", SOURCE, parameters, run_root / "source-workload.json", source=True
+        "freeze",
+        SOURCE if workload_profile == "frozen" else run_root / "reference-launcher",
+        parameters,
+        run_root / "source-workload.json",
+        source=True,
     )
     workload = json.loads((run_root / "workload.json").read_text())
     if workload != json.loads((run_root / "source-workload.json").read_text()):
@@ -379,6 +401,7 @@ def prepare(
         write_json(run_root / "prior-exclusions.json", ledger)
     frozen = {
         "native_improvement": 0.25,
+        "workload_profile": workload_profile,
         "parameters": parameters,
         "code": code,
         "workload_sha256": workload["workload_sha256"],

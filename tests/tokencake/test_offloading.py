@@ -406,6 +406,54 @@ def test_native_group_specs_and_maximum_relief(groups, factor):
     assert record.retained
 
 
+@pytest.mark.parametrize("groups,factor", [(1, 1), (1, 2), (2, 1)])
+def test_window_can_preserve_and_restore_more_than_32_gpu_blocks(groups, factor):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=129,
+        cpu_blocks=128,
+        groups=groups,
+        factor=factor,
+        max_num_batched_tokens=1024,
+    )
+    record = complete_generation(scheduler, request_for("creator", tokens=640))
+    offload = scheduler.connector.tokencake_scheduler
+    scheduler.add_request(request_for("waiting", tokens=1024, value=1))
+    start(scheduler, record)
+    sources = [bid for job in offload._detached.values() for bid in job.source_ids]
+    assert len(sources) == (60 if groups == 2 else 40)
+    complete_jobs(scheduler)
+    resumed = request_for("resumed", tokens=656)
+    matched, asynchronous = offload.get_num_new_matched_tokens(resumed, 0)
+    assert matched == 640 and asynchronous
+
+
+@pytest.mark.parametrize("constraint,expected", [("cpu", 8), ("duration", 10)])
+def test_automatic_preservation_respects_cpu_and_restore_time(
+    monkeypatch, constraint, expected
+):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=129,
+        cpu_blocks=8 if constraint == "cpu" else 128,
+        max_num_batched_tokens=1024,
+    )
+    record = complete_generation(scheduler, request_for("creator", tokens=640))
+    offload = scheduler.connector.tokencake_scheduler
+    monkeypatch.setattr(offload.lifecycles, "clock", lambda: 1.0)
+    if constraint == "duration":
+        monkeypatch.setattr(
+            offload, "estimate_transfer", lambda blocks, direction: blocks * 0.1
+        )
+    scheduler.add_request(request_for("waiting", tokens=1024, value=1))
+    offload.lifecycles.apply(
+        LifecycleEvent(
+            "stall_started", record.metadata.lifecycle_id, estimated_duration_s=6.1
+        )
+    )
+    offload.evaluate_pending(scheduler)
+    sources = [bid for job in offload._detached.values() for bid in job.source_ids]
+    assert len(sources) == expected
+
+
 @pytest.mark.parametrize(
     "cause",
     [

@@ -26,7 +26,7 @@ class SchedulingConfig:
     """Enable agent-aware scheduling."""
     reserve_generation_tokens: StrictBool = True
     """Commit the declared generation budget as logical admission capacity."""
-    generation_reserve_mode: Literal["all", "progress", "reclaim"] = "reclaim"
+    generation_reserve_mode: Literal["all", "progress", "reclaim"] = "all"
     """Reserve generation for all, a finisher, or physical-reclaim beneficiaries."""
     decode_prefill_token_budget: Annotated[StrictInt, Field(ge=0)] = 0
     """Per-step prefill budget during decode; zero keeps the native budget."""
@@ -90,8 +90,8 @@ class OffloadConfig:
     """Scheduler steps to wait before reconsidering a rejected window."""
     eviction_window_blocks: Annotated[StrictInt, Field(gt=0)] = 128
     """Maximum number of entries inspected in the eviction window."""
-    max_relief_blocks: Annotated[StrictInt, Field(gt=0)] = 32
-    """Maximum snapshot blocks selected per preservation decision."""
+    max_relief_blocks: Annotated[StrictInt, Field(ge=0)] = 0
+    """GPU blocks per store; zero uses the tool-window and CPU capacity bounds."""
     default_stall_s: PositiveFloat = 1.0
     """Default estimate when the caller supplies no stall duration."""
     release_lead_s: NonnegativeFloat = 0.10

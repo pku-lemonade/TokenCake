@@ -1,0 +1,62 @@
+diff --git a/agent/app/code_writer_paper_pressure.py b/agent/app/code_writer_paper_pressure.py
+--- a/agent/app/code_writer_paper_pressure.py
++++ b/agent/app/code_writer_paper_pressure.py
+@@ -232,6 +232,21 @@ def _annotate(
+     return node
+ 
+ 
++def _assign_continuation_input_composer(node: Any) -> None:
++    default_composer = node.input_composer
++
++    def composer(task: TransferDataItem) -> LLMTextChunkChain:
++        chain = task.data
++        if isinstance(chain, dict) and len(chain) == 1:
++            chain = next(iter(chain.values()))
++        if (isinstance(chain, LLMTextChunkChain) and chain.chunks
++                and chain.chunks[0].text == node.system_prompt.text):
++            return LLMTextChunkChain(chunks=list(chain.chunks))
++        return default_composer(task)
++
++    node.assign_composer(is_input=True, composer=composer)
++
++
+ def _role_validation_node(
+     *,
+     role: str,
+@@ -274,6 +289,7 @@ class CodeWriterPaperPressureApplication(LLMApplication):
+     """CodeWriter variant with exact-prefix tool continuations."""
+ 
+     profile_name = PAPER_PRESSURE_PROFILE
++    input_composition = "same-role-prefix-v1"
+ 
+     def __init__(
+         self,
+@@ -383,6 +399,7 @@ class CodeWriterPaperPressureApplication(LLMApplication):
+                 critical_path=critical,
+                 memory_weight=1.7,
+             )
++            _assign_continuation_input_composer(repair)
+             graph.add_node(repair)
+             graph.add_edge(validate.uuid, repair.uuid)
+ 
+@@ -460,6 +477,7 @@ class CodeWriterPaperPressureApplication(LLMApplication):
+                 near_completion=True,
+                 memory_weight=2.2,
+             )
++            _assign_continuation_input_composer(repair)
+             graph.add_node(repair)
+             graph.add_edge(validate.uuid, repair.uuid)
+ 
+diff --git a/vllm_serving.py b/vllm_serving.py
+--- a/vllm_serving.py
++++ b/vllm_serving.py
+@@ -186,6 +186,9 @@ def generate_requests_app(
+             } for node in executable_nodes),
+                                          key=lambda item: item["name"]),
+         }
++        if hasattr(application, "input_composition"):
++            app_request.frozen_workload_contract["input_composition"] = (
++                application.input_composition)
+         requests.append(app_request)
+     return requests
+ 

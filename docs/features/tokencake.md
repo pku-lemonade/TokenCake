@@ -39,14 +39,16 @@ these components.
 
 Reservations prioritize new admissions. Requests that have already been admitted
 continue to grow, and subsequent admissions account for their remaining capacity
-commitments. By default, `scheduling.reserve_generation_tokens` also accounts
-for generation after physical reclamation. Its
-`scheduling.generation_reserve_mode` defaults to `reclaim`: all admitted input
-growth is committed, and a request needing physical preemption also commits its
-remaining generation. Victim selection seeks enough space for this commitment,
-and new admissions respect it until the beneficiary finishes or is preempted.
-Running requests retain native physical progress; reservation changes affect
-subsequent admissions. `reclaim_beneficiary` counts newly protected beneficiaries.
+commitments. By default, `scheduling.reserve_generation_tokens` also commits
+every admitted request's declared generation budget, with
+`scheduling.generation_reserve_mode="all"`.
+
+The optional `reclaim` mode commits all admitted input growth, and a request
+needing physical preemption also commits its remaining generation. Victim
+selection seeks enough space for this commitment, and new admissions respect
+it until the beneficiary finishes or is preempted. Running requests retain
+native physical progress; reservation changes affect subsequent admissions.
+`reclaim_beneficiary` counts newly protected beneficiaries.
 
 The optional `progress` mode commits all admitted input growth together with
 enough generation capacity for at least one admitted request to finish. Other
@@ -188,6 +190,13 @@ generation's ordered snapshot. Those GPU cache entries are already free;
 copying them to CPU preserves their contents without increasing physical GPU
 capacity. Native transfer fences protect their bytes until D2H completes.
 H2D occurs only when a later request needs a matching prefix.
+
+The default `offload.max_relief_blocks=0` selects an aligned prefix within the
+available CPU capacity and predicted tool window. Estimated D2H plus H2D time
+must leave at least twice that transfer time, or 50 milliseconds, in the window.
+Blocks already on CPU still count toward the restore estimate. A positive value
+keeps an explicit block cap, also bounded by the current waiting demand. Native
+multi-group alignment and transfer fences apply to both modes.
 
 The lifecycle temporarily retains ready CPU keys using the native manager's
 eviction references. Finish, expiry, or predicted ownership release drops those

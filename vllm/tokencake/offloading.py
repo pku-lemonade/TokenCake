@@ -260,6 +260,22 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
             protected.update(record.retained)
         return max(0, self.num_cpu_blocks - len(protected))
 
+    def _preservation_limit(
+        self, candidates: list[SnapshotBlock], available: int, remaining: float
+    ) -> int:
+        new_count = 0
+        limit = 0
+        for count, candidate in enumerate(candidates, 1):
+            new_count += self.manager._policy.get(candidate.key) is None
+            transfer = self.estimate_transfer(
+                new_count, "d2h"
+            ) + self.estimate_transfer(count, "h2d")
+            # Leave room for transfer uncertainty and a subsequent restore.
+            if new_count > available or remaining - transfer < max(0.05, 2 * transfer):
+                break
+            limit = count * self.config.block_size_factor
+        return limit
+
     def evaluate_pending(
         self, scheduler: "Scheduler", *, new_step: bool = False
     ) -> None:
@@ -274,7 +290,7 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
             record.pending_evaluation = False
             if not record.owns_preservation:
                 continue
-            # Like the source episode, commit one bounded preservation batch.
+            # Commit one capacity- and duration-bounded preservation batch.
             if record.retained or record.pending_retention:
                 continue
             if (
@@ -300,8 +316,17 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
             ):
                 self.lifecycles.metrics.count(Metric.BACKOFF)
                 continue
+            assert record.started_at is not None
+            remaining = max(
+                0.0,
+                record.started_at + record.predicted_duration - self.lifecycles.clock(),
+            )
             candidates = self._snapshot_candidates(record)
-            limit = min(pressure.fit_demand, self.settings.max_relief_blocks)
+            limit = (
+                min(pressure.fit_demand, self.settings.max_relief_blocks)
+                if self.settings.max_relief_blocks
+                else self._preservation_limit(candidates, available, remaining)
+            )
             bounded = self._bound_candidates(candidates, limit)
             if candidates and limit > 0 and not bounded:
                 self.lifecycles.metrics.count(Metric.PREFIX_GAP)
@@ -310,12 +335,7 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
             new_count = sum(self.manager._policy.get(c.key) is None for c in candidates)
             transfer_time = self.estimate_transfer(
                 new_count, "d2h"
-            ) + self.estimate_transfer(new_count, "h2d")
-            assert record.started_at is not None
-            remaining = max(
-                0.0,
-                record.started_at + record.predicted_duration - self.lifecycles.clock(),
-            )
+            ) + self.estimate_transfer(len(candidates), "h2d")
             controller = scheduler._tokencake_scheduling
             agent_score = (
                 controller.plan.scores.get(record.metadata.agent_type, 0.0)

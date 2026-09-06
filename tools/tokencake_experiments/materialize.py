@@ -10,6 +10,8 @@ from pathlib import Path
 
 SOURCE_REVISION = "7a608a4e53ea990b2540c93b4d28cb795b905109"
 PATCH = Path(__file__).with_name("launcher.patch")
+CONTINUATION_PATCH = Path(__file__).with_name("continuation.patch")
+WORKLOAD_PROFILES = ("frozen", "continuation")
 HELPERS = (
     "vllm_serving.py",
     "agent",
@@ -41,7 +43,15 @@ def git(root: Path, *args: str, input: str | None = None) -> str:
     ).stdout.strip()
 
 
-def materialize(source: Path, destination: Path, *, patched: bool = True) -> dict:
+def materialize(
+    source: Path,
+    destination: Path,
+    *,
+    patched: bool = True,
+    workload_profile: str = "frozen",
+) -> dict:
+    if workload_profile not in WORKLOAD_PROFILES:
+        raise ValueError(f"Unknown workload profile: {workload_profile}")
     source, destination = source.resolve(), destination.resolve()
     revision = git(source, "rev-parse", "HEAD")
     if revision != SOURCE_REVISION or git(source, "status", "--porcelain"):
@@ -78,8 +88,14 @@ def materialize(source: Path, destination: Path, *, patched: bool = True) -> dic
     if patched:
         git(destination, "apply", "--check", "--recount", "--unidiff-zero", str(PATCH))
         git(destination, "apply", "--recount", "--unidiff-zero", str(PATCH))
+    if workload_profile == "continuation":
+        git(destination, "apply", "--check", "--recount", str(CONTINUATION_PATCH))
+        git(destination, "apply", "--recount", str(CONTINUATION_PATCH))
     modified = git(destination, "diff", "--name-only").splitlines()
-    if modified != (["vllm_serving.py"] if patched else []):
+    expected = {"vllm_serving.py"} if patched else set()
+    if workload_profile == "continuation":
+        expected.update(("vllm_serving.py", "agent/app/code_writer_paper_pressure.py"))
+    if set(modified) != expected:
         raise RuntimeError(f"Unexpected launcher changes: {modified}")
     if git(source, "status", "--porcelain"):
         raise RuntimeError("Source worktree changed during materialization")
@@ -88,6 +104,10 @@ def materialize(source: Path, destination: Path, *, patched: bool = True) -> dic
         "source": str(source),
         "checkout": str(destination),
         "patch_sha256": digest(PATCH) if patched else None,
+        "workload_profile": workload_profile,
+        "workload_patch_sha256": (
+            digest(CONTINUATION_PATCH) if workload_profile == "continuation" else None
+        ),
         "source_helpers": original,
         "materialized_helpers": {name: digest(destination / name) for name in original},
     }
@@ -98,9 +118,17 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--unpatched", action="store_true")
+    parser.add_argument(
+        "--workload-profile", choices=WORKLOAD_PROFILES, default="frozen"
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    result = materialize(args.source, args.destination, patched=not args.unpatched)
+    result = materialize(
+        args.source,
+        args.destination,
+        patched=not args.unpatched,
+        workload_profile=args.workload_profile,
+    )
     with args.output.open("x") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")

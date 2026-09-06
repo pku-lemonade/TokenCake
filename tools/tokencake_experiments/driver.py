@@ -27,7 +27,7 @@ from tools.tokencake_experiments.campaign import (
     server_command,
     workload_parameters,
 )
-from tools.tokencake_experiments.materialize import digest
+from tools.tokencake_experiments.materialize import WORKLOAD_PROFILES, digest
 from tools.tokencake_experiments.preflight import (
     MOONCAKE_CONFIGURATION,
     adapter,
@@ -639,6 +639,9 @@ def main() -> None:
             subparser.add_argument("--prior-exclusions", type=Path)
             subparser.add_argument("--snapshot-target", action="store_true")
             subparser.add_argument(
+                "--workload-profile", choices=WORKLOAD_PROFILES, default="frozen"
+            )
+            subparser.add_argument(
                 "--mode", choices=("native", "agent", "offload-agent"), action="append"
             )
             subparser.add_argument(
@@ -667,6 +670,7 @@ def main() -> None:
             prior_exclusions=args.prior_exclusions,
             snapshot_target=args.snapshot_target,
             cases=cases,
+            workload_profile=args.workload_profile,
         )
     else:
         # Hold the ledger lock for reports too, so a live attempt cannot be

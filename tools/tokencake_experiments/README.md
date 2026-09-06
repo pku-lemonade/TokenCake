@@ -279,3 +279,32 @@ seconds and retain timestamps and scrape durations in `metrics-timeseries.jsonl`
 GPU utilization is sampled alongside the existing process and thermal evidence.
 KV occupancy is distinct from hardware utilization and useful-compute occupancy;
 the report must not treat these as interchangeable measurements.
+
+After every case has a qualifying result, generate the analysis and figures:
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.component_graph \
+  NEW_DIRECTORY/launcher NEW_DIRECTORY/graph.json
+.venv/bin/python -m tools.tokencake_experiments.component_analysis \
+  NEW_DIRECTORY --graph NEW_DIRECTORY/graph.json --output NEW_DIRECTORY/analysis.json
+.venv/bin/python -m tools.tokencake_experiments.component_matrix \
+  NEW_DIRECTORY/analysis.json NEW_DIRECTORY/analysis
+.venv/bin/python -m tools.tokencake_experiments.component_plots \
+  NEW_DIRECTORY/analysis.json NEW_DIRECTORY/figures
+```
+
+The extractor verifies artifact hashes, completion, and graph identity. Both
+tables and plots require all twenty component cases, the same workload and
+arrival traces, one target runtime, and matching resolved serving parameters.
+They retain excluded launches and report medians of qualifying observations;
+plotted ranges are observed minima and maxima, not confidence intervals.
+The JSON retains individual application latencies and critical-path timing;
+CSV tables and PNG/PDF figures provide portable summaries.
+
+First-prefill input sources are distinct from actual executed or recomputed
+tokens. Native vLLM does not expose the latter measurements. Offload-only also
+exports zero-initialized TokenCake scheduling counters without an active
+observer; these are normalized to unavailable rather than reported as zero
+recomputation. Critical-path LLM time includes request waiting and service.
+The actual join dependencies determine the path, so parallel node durations
+are not incorrectly added together as application E2E time.

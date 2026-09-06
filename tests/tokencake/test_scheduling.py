@@ -597,7 +597,13 @@ def test_capacity_denials_reuse_frozen_order_without_skipping_fitting_work(polic
 @pytest.mark.parametrize("groups,blocks,shared", [(1, 129, 7), (2, 193, 9)])
 @pytest.mark.parametrize(
     "band,importance,expected",
-    [(500, 3, "warm"), (0, 3, "cold"), (500, 10, "cold")],
+    [
+        (500, 3, "warm"),
+        (0, 3, "cold"),
+        (500, 10, "cold"),
+        (1000, 10, "warm"),
+        (1000, 20, "cold"),
+    ],
 )
 def test_pressure_prefers_shared_kv_within_score_band_and_completes(
     policy, groups, blocks, shared, band, importance, expected

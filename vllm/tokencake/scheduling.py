@@ -176,6 +176,7 @@ class SchedulingController:
         self._queued_at: dict[str, float] = {}
         self._completion_epoch = 0
         self.reservation_deferred: set[str] = set()
+        self._cache_preferred: set[str] = set()
 
     def associate(self, request_id: str, metadata: TokenCakeMetadata) -> None:
         self.metadata[request_id] = metadata
@@ -190,6 +191,7 @@ class SchedulingController:
 
     def begin_step(self, waiting: Iterable[Request], running: list[Request]) -> bool:
         self.reservation_deferred.clear()
+        self._cache_preferred.clear()
         if not self.metadata:
             self.charges.clear()
             self._used.clear()
@@ -521,6 +523,9 @@ class SchedulingController:
         self.reservation_deferred.discard(request.request_id)
         if borrow_reserved and not running:
             self.metrics.count(Metric.WORK_CONSERVING_ADMITTED)
+        if not running and request.request_id in self._cache_preferred:
+            self.metrics.count(Metric.CACHE_AFFINITY_ADMITTED)
+            self._cache_preferred.discard(request.request_id)
         self._update_available()
         metadata = self.metadata.get(request.request_id)
         if metadata is None:
@@ -587,9 +592,25 @@ class SchedulingController:
             history.completed += 1
             history.duration += max(0.0, time.monotonic() - started)
 
-    def cache_hits(self, request: Request, gpu: int, cpu: int) -> None:
+    def cache_hits(
+        self,
+        request: Request,
+        gpu: int,
+        cpu: int,
+        blocks: KVCacheBlocks | None = None,
+    ) -> None:
         self.metrics.count(Metric.GPU_HIT_TOKENS, gpu)
         self.metrics.count(Metric.CPU_HIT_TOKENS, cpu)
+        if blocks is not None:
+            matched = {
+                block.block_id: block
+                for group in blocks.blocks
+                for block in group
+                if not block.is_null
+            }
+            shared = sum(block.ref_cnt > 1 for block in matched.values())
+            self.metrics.count(Metric.GPU_SHARED_HIT_BLOCKS, shared)
+            self.metrics.count(Metric.GPU_EXCLUSIVE_HIT_BLOCKS, len(matched) - shared)
         if request.num_preemptions:
             self.metrics.count(Metric.RESUME_GPU_HIT_TOKENS, gpu)
             self.metrics.count(Metric.RESUME_CPU_HIT_TOKENS, cpu)
@@ -635,6 +656,79 @@ class SchedulingController:
             request.arrival_time,
             request.request_id,
         )
+
+    def _active_prefix_affinity(self, request: Request) -> tuple[float, int]:
+        if (
+            request.num_computed_tokens
+            or request.skip_reading_prefix_cache
+            or request.has_encoder_inputs
+        ):
+            return 0.0, 0
+        blocks, computed = self.manager.coordinator.find_longest_cache_hit(
+            request.block_hashes, request.num_tokens - 1
+        )
+        shared = len(
+            {
+                block.block_id
+                for group in blocks
+                for block in group
+                if not block.is_null and block.ref_cnt > 0
+            }
+        )
+        if not shared:
+            return 0.0, 0
+        full_tokens = self.admission_tokens(request)
+        demand = self.manager.coordinator.get_num_blocks_to_allocate(
+            request_id=request.request_id,
+            num_tokens=min(
+                full_tokens + self.num_lookahead_tokens, self.manager.max_model_len
+            ),
+            new_computed_blocks=blocks,
+            num_encoder_tokens=0,
+            total_computed_tokens=computed,
+            num_tokens_main_model=full_tokens,
+            apply_admission_cap=True,
+        )
+        return shared / max(1, shared + demand), shared
+
+    def order_candidates(
+        self, candidates: list[tuple[Request, RequestQueue]]
+    ) -> list[tuple[Request, RequestQueue]]:
+        ordered = sorted(candidates, key=lambda item: self.order_key(item[0]))
+        band = self.settings.cache_affinity_score_band
+        capacity = len(self.manager.block_pool.blocks) - 1
+        if (
+            not band
+            or not self.manager.enable_caching
+            or self.uncommitted_blocks > capacity * (1 - self.settings.gpu_usage_high)
+        ):
+            return ordered
+        result: list[tuple[Request, RequestQueue]] = []
+        start = 0
+        while start < len(ordered):
+            highest = self.scores[ordered[start][0].request_id]
+            stop = start + 1
+            while (
+                stop < len(ordered)
+                and self.scores[ordered[stop][0].request_id] >= highest - band
+            ):
+                stop += 1
+            # Score bands bound each promotion independently of memory units.
+            group = ordered[start:stop]
+            preferred = sorted(
+                group,
+                key=lambda item: self._active_prefix_affinity(item[0]),
+                reverse=True,
+            )
+            positions = {item[0].request_id: i for i, item in enumerate(group)}
+            self._cache_preferred.update(
+                item[0].request_id
+                for i, item in enumerate(preferred)
+                if positions[item[0].request_id] > i
+            )
+            result.extend(preferred)
+            start = stop
+        return result
 
     def annotated_prefix(
         self, waiting: RequestQueue, skipped: RequestQueue, policy: SchedulingPolicy

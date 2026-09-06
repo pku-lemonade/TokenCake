@@ -50,10 +50,18 @@ physical and committed capacity. It still checks full demand before admitting a
 borrower. A preempted generation remains pending and resumes to completion.
 
 When decode requests are running, `scheduling.decode_prefill_token_budget` limits
-the total annotated prefill work per step (1024 tokens by default). Pure prefill
-uses the native token budget. Setting this value to zero disables the additional
-limit. Encoder inputs, non-chunked prefill, and Mamba block alignment retain their
-native scheduling rules.
+the total annotated prefill work per step if set to a positive value. Its default
+is zero, preserving the native token budget. The full 24-DAG QPS 1.0 experiment
+with a 1024-token limit regressed E2E. Pure prefill, encoder inputs, non-chunked
+prefill, and Mamba block alignment retain their native scheduling rules.
+
+Under high committed-capacity pressure, annotated requests within
+`scheduling.cache_affinity_score_band` (500 score points by default) can prefer
+prefixes held by running requests. This reduces incremental physical KV demand
+within bounded importance bands. Larger score differences keep their order;
+ordinary-request barriers and all admission checks still apply. Setting the band
+to zero disables this preference. GPU shared/exclusive hit-block counters separate
+concurrent sharing from reuse of free cache entries.
 
 ## Request metadata
 

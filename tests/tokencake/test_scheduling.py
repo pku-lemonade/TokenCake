@@ -35,7 +35,8 @@ def make_scheduler(
     policy="fcfs",
     groups=1,
     reserve_generation_tokens=False,
-    decode_prefill_token_budget=1024,
+    decode_prefill_token_budget=0,
+    cache_affinity_score_band=500,
     **kwargs,
 ):
     base = create_scheduler(**kwargs)
@@ -55,6 +56,7 @@ def make_scheduler(
                         {
                             "reserve_generation_tokens": reserve_generation_tokens,
                             "decode_prefill_token_budget": decode_prefill_token_budget,
+                            "cache_affinity_score_band": cache_affinity_score_band,
                         }
                         if enabled
                         else {}
@@ -85,8 +87,21 @@ def make_scheduler(
     )
 
 
-def make_request(name, *, importance=0.0, agent_type="agent", tokens=32, priority=0):
-    request = create_requests(1, num_tokens=tokens, req_ids=[name], max_tokens=128)[0]
+def make_request(
+    name,
+    *,
+    importance=0.0,
+    agent_type="agent",
+    tokens=32,
+    priority=0,
+    distinct_prompt=False,
+):
+    request = create_requests(
+        2 if distinct_prompt else 1,
+        num_tokens=tokens,
+        req_ids=["unused", name] if distinct_prompt else [name],
+        max_tokens=128,
+    )[-1]
     request.priority = priority
     request.arrival_time = 1000.0
     if importance is not None:
@@ -262,7 +277,7 @@ def test_decode_pressure_bounds_prefill_batch_and_releases_native_budget(policy)
 def test_decode_pressure_keeps_ordinary_and_disabled_prefill_native(ordinary, enabled):
     scheduler = make_scheduler(enabled=enabled, decode_prefill_token_budget=0)
     if ordinary:
-        scheduler = make_scheduler(enabled=enabled)
+        scheduler = make_scheduler(enabled=enabled, decode_prefill_token_budget=1024)
     scheduler.add_request(make_request("decoder"))
     decode(scheduler, scheduler.schedule())
     scheduler.add_request(
@@ -272,7 +287,9 @@ def test_decode_pressure_keeps_ordinary_and_disabled_prefill_native(ordinary, en
 
 
 def test_decode_pressure_preserves_nonchunked_prefill():
-    scheduler = make_scheduler(enable_chunked_prefill=False)
+    scheduler = make_scheduler(
+        enable_chunked_prefill=False, decode_prefill_token_budget=1024
+    )
     scheduler.add_request(make_request("decoder"))
     decode(scheduler, scheduler.schedule())
     scheduler.add_request(make_request("prefill", tokens=1536))
@@ -538,6 +555,83 @@ def test_capacity_denials_reuse_frozen_order_without_skipping_fitting_work(polic
         fitting,
     ]
     assert prefix.call_count == 1
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+@pytest.mark.parametrize("groups,blocks,shared", [(1, 129, 7), (2, 193, 9)])
+@pytest.mark.parametrize(
+    "band,importance,expected",
+    [(500, 3, "warm"), (0, 3, "cold"), (500, 10, "cold")],
+)
+def test_pressure_prefers_shared_kv_within_score_band_and_completes(
+    policy, groups, blocks, shared, band, importance, expected
+):
+    scheduler = make_scheduler(
+        policy=policy,
+        groups=groups,
+        num_blocks=blocks,
+        max_num_seqs=2,
+        enable_prefix_caching=True,
+        cache_affinity_score_band=band,
+    )
+    anchor = make_request("anchor", tokens=1536)
+    scheduler.add_request(anchor)
+    decode(scheduler, scheduler.schedule())
+    cold = make_request("cold", importance=importance, tokens=128, distinct_prompt=True)
+    warm = make_request("warm", tokens=128)
+    for request in (cold, warm):
+        scheduler.add_request(request)
+    first = scheduler.schedule()
+    assert set(first.num_scheduled_tokens) == {"anchor", expected}
+    controller = scheduler._tokencake_scheduling
+    metrics = controller.metrics.snapshot(0)
+    assert metrics["scheduling.cache_affinity_admitted"] == (expected == "warm")
+    assert metrics["scheduling.gpu_shared_hit_blocks"] == (
+        shared if expected == "warm" else 0
+    )
+    decode(scheduler, first)
+    for _ in range(400):
+        if not scheduler.has_requests():
+            break
+        decode(scheduler, scheduler.schedule())
+    assert all(
+        r.is_finished() and r.num_output_tokens == 128 for r in (anchor, cold, warm)
+    )
+    assert controller.metrics.snapshot(0)["scheduling.recomputed_tokens"] == 0
+
+
+def test_shared_kv_preference_respects_ordinary_queue_barrier():
+    scheduler = make_scheduler(
+        num_blocks=129, max_num_seqs=2, enable_prefix_caching=True
+    )
+    scheduler.add_request(make_request("anchor", tokens=1536))
+    decode(scheduler, scheduler.schedule())
+    for request in (
+        make_request("cold", importance=3, tokens=128, distinct_prompt=True),
+        make_request("ordinary", importance=None),
+        make_request("warm", tokens=128),
+    ):
+        scheduler.add_request(request)
+    assert set(scheduler.schedule().num_scheduled_tokens) == {"anchor", "cold"}
+
+
+def test_free_cached_prefix_does_not_count_as_shared_capacity():
+    scheduler = make_scheduler(enable_prefix_caching=True)
+    scheduler.add_request(make_request("anchor", tokens=128))
+    decode(scheduler, scheduler.schedule())
+    scheduler.finish_requests("anchor", RequestStatus.FINISHED_STOPPED)
+    warm = make_request("warm", tokens=128)
+    scheduler.add_request(warm)
+    controller = scheduler._tokencake_scheduling
+    before = controller.metrics.snapshot(0)
+    free = scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
+    assert controller._active_prefix_affinity(warm) == (0.0, 0)
+    assert controller.metrics.snapshot(0) == before
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == free
+    assert scheduler.schedule().num_scheduled_tokens == {"warm": 16}
+    metrics = controller.metrics.snapshot(0)
+    assert metrics["scheduling.gpu_shared_hit_blocks"] == 0
+    assert metrics["scheduling.gpu_exclusive_hit_blocks"] == 7
 
 
 @pytest.mark.parametrize(

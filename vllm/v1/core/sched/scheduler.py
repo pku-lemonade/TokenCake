@@ -750,12 +750,7 @@ class Scheduler(SchedulerInterface):
                         if cache_agent_order:
                             # All scores and eligibility are frozen for this step.
                             # Repeated capacity denials need not rescan the queue.
-                            agent_order = deque(
-                                sorted(
-                                    eligible,
-                                    key=lambda item: tokencake.order_key(item[0]),
-                                )
-                            )
+                            agent_order = deque(tokencake.order_candidates(eligible))
                     if agent_order is not None:
                         request, request_queue = agent_order.popleft()
                     request_id = request.request_id
@@ -967,6 +962,7 @@ class Scheduler(SchedulerInterface):
                         request,
                         num_new_local_computed_tokens,
                         num_external_computed_tokens,
+                        new_computed_blocks,
                     )
 
                 # KVTransfer: the connector uses this info to determine

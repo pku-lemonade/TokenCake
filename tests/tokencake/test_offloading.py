@@ -51,6 +51,7 @@ def make_offload_scheduler(
     cache_policy="lru",
     async_scheduling=False,
     max_num_batched_tokens=512,
+    decode_prefill_token_budget=0,
 ):
     base = create_scheduler(
         num_blocks=gpu_blocks,
@@ -113,7 +114,14 @@ def make_offload_scheduler(
         ),
         additional_config={
             "tokencake": {
-                "scheduling": {"enabled": scheduling},
+                "scheduling": {
+                    "enabled": scheduling,
+                    **(
+                        {"decode_prefill_token_budget": decode_prefill_token_budget}
+                        if scheduling
+                        else {}
+                    ),
+                },
                 "offload": {"min_gpu_usage": 0.0, **(settings or {})},
             }
         },
@@ -518,7 +526,10 @@ def test_waiting_pressure_accounts_for_borrowing_without_overcommitting():
 
 def test_waiting_pressure_uses_decode_prefill_budget():
     scheduler = make_offload_scheduler(
-        gpu_blocks=1025, scheduling=True, max_num_batched_tokens=8192
+        gpu_blocks=1025,
+        scheduling=True,
+        max_num_batched_tokens=8192,
+        decode_prefill_token_budget=1024,
     )
     scheduler.add_request(request_for("decoder"))
     scheduler.schedule()

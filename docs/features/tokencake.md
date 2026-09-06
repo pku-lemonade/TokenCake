@@ -39,11 +39,11 @@ these components.
 
 Reservations prioritize new admissions. Requests that have already been admitted
 continue to grow, and subsequent admissions account for their remaining capacity
-commitments. By default, `scheduling.reserve_generation_tokens` also commits
-every admitted request's declared generation budget, with
-`scheduling.generation_reserve_mode="all"`.
+commitments. By default, `scheduling.reserve_generation_tokens` commits a
+physical-reclaim beneficiary's declared generation budget, with
+`scheduling.generation_reserve_mode="reclaim"`.
 
-The optional `reclaim` mode commits all admitted input growth, and a request
+The `reclaim` mode commits all admitted input growth, and a request
 needing physical preemption also commits its remaining generation. Victim
 selection seeks enough space for this commitment, and new admissions respect
 it until the beneficiary finishes or is preempted. Running requests retain

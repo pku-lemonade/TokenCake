@@ -46,6 +46,8 @@ class Metric(str, Enum):
     ADMITTED = "scheduling.admitted"
     WORK_CONSERVING_ADMITTED = "scheduling.work_conserving_admitted"
     CACHE_AFFINITY_ADMITTED = "scheduling.cache_affinity_admitted"
+    JOIN_PRIORITY_ADMITTED = "scheduling.join_priority_admitted"
+    PRIORITY_BORROW_ADMITTED = "scheduling.priority_borrow_admitted"
     CRITICAL_ADMITTED = "scheduling.critical_admitted"
     CRITICAL_WAIT_GE_60S = "scheduling.critical_wait_ge_60s"
     CRITICAL_WAIT_GE_180S = "scheduling.critical_wait_ge_180s"

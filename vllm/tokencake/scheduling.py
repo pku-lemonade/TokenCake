@@ -156,6 +156,7 @@ class SchedulingController:
         )
         self.metadata: dict[str, TokenCakeMetadata] = {}
         self.scores: dict[str, int] = {}
+        self._agent_scores: dict[str, int] = {}
         self.history: OrderedDict[str, AgentHistory] = OrderedDict()
         self.started: dict[str, float] = {}
         # One charge per occupied physical block, including shared prefix hits.
@@ -166,6 +167,7 @@ class SchedulingController:
         self.reserve_ratio = settings.reserve_ratio_min
         self.step = 0
         self.waiting_critical: set[str] = set()
+        self._waiting_scores: dict[str, int] = {}
         self.shared_available = 0
         self.reserved_available: dict[str, int] = {}
         self._accounting_active = False
@@ -177,6 +179,7 @@ class SchedulingController:
         self._completion_epoch = 0
         self.reservation_deferred: set[str] = set()
         self._cache_preferred: set[str] = set()
+        self._priority_borrowed: set[str] = set()
 
     def associate(self, request_id: str, metadata: TokenCakeMetadata) -> None:
         self.metadata[request_id] = metadata
@@ -192,10 +195,13 @@ class SchedulingController:
     def begin_step(self, waiting: Iterable[Request], running: list[Request]) -> bool:
         self.reservation_deferred.clear()
         self._cache_preferred.clear()
+        self._priority_borrowed.clear()
+        self._waiting_scores.clear()
         if not self.metadata:
             self.charges.clear()
             self._used.clear()
             self.scores.clear()
+            self._agent_scores.clear()
             self._admitted.clear()
             self._growth_commitments.clear()
             self._retry_capacity.clear()
@@ -211,13 +217,26 @@ class SchedulingController:
             for r in requests
             if r.request_id in self._admitted
         }
-        self.scores = {
+        self._agent_scores = {
             r.request_id: request_score(
                 self.metadata[r.request_id], r.arrival_time, now
             )
             for r in requests
             if r.request_id in self.metadata
         }
+        self.scores = self._agent_scores.copy()
+        # A critical branch still depends on the other branches at its join.
+        if self.settings.inherit_join_priority:
+            groups: dict[str, tuple[float, str]] = {}
+            highest: dict[tuple[float, str], int] = {}
+            for request_id, score in self._agent_scores.items():
+                member = self.metadata[request_id]
+                if member.application_started_at_s > 0 and member.join_group:
+                    group = (member.application_started_at_s, member.join_group)
+                    groups[request_id] = group
+                    highest[group] = max(highest.get(group, score), score)
+            for request_id, group in groups.items():
+                self.scores[request_id] = highest[group]
         self.step += 1
         # Adopt allocations made before annotated work joined the engine.
         if not self._accounting_active:
@@ -231,6 +250,10 @@ class SchedulingController:
             metadata = self.metadata.get(request.request_id)
             if metadata is not None and metadata.agent_type:
                 waiting_counts[metadata.agent_type] += 1
+                score = self.scores[request.request_id]
+                self._waiting_scores[metadata.agent_type] = max(
+                    self._waiting_scores.get(metadata.agent_type, score), score
+                )
                 waiting_time[metadata.agent_type] += max(
                     0.0, now - request.arrival_time
                 )
@@ -379,20 +402,28 @@ class SchedulingController:
             remaining -= own
             if remaining == 0:
                 return usage
-        if not borrow_reserved and (
-            self.waiting_critical - {key}
-            or (key not in self.plan.critical and self.waiting_critical)
-        ):
-            return None
         donors = sorted(
             (k for k in self.reserved_available if k != key),
             key=lambda k: (self.reserved_available[k], self.plan.scores[k]),
             reverse=True,
         )
         for owner in donors:
+            if not borrow_reserved and owner in self.waiting_critical:
+                owner_score = self._waiting_scores.get(owner)
+                score = self.scores.get(request.request_id)
+                margin = self.settings.priority_borrow_score_margin
+                if (
+                    not margin
+                    or owner_score is None
+                    or score is None
+                    or score - owner_score < margin
+                ):
+                    continue
             borrowed = min(remaining, self.reserved_available[owner])
             usage.append((owner, borrowed))
             remaining -= borrowed
+            if remaining == 0:
+                return usage
         return usage if remaining == 0 else None
 
     def can_allocate(
@@ -465,15 +496,25 @@ class SchedulingController:
         ):
             self.metrics.count(Metric.RESUME_DEFERRED)
             return False
-        allowed = (
-            self._consumption(request, demand, borrow_reserved=borrow_reserved)
-            is not None
-        )
-        if not allowed:
+        usage = self._consumption(request, demand, borrow_reserved=borrow_reserved)
+        if usage is None:
             self.metrics.count(Metric.RESERVATION_DENIED)
             if request.request_id in self.metadata:
                 self.reservation_deferred.add(request.request_id)
-        return allowed
+            return False
+        metadata = self.metadata.get(request.request_id)
+        if (
+            not borrow_reserved
+            and metadata is not None
+            and any(
+                count
+                and owner in self.waiting_critical
+                and owner != metadata.agent_type
+                for owner, count in usage
+            )
+        ):
+            self._priority_borrowed.add(request.request_id)
+        return True
 
     def commit(
         self,
@@ -532,6 +573,13 @@ class SchedulingController:
             return
         queued_at = self._queued_at.pop(request.request_id, None)
         if queued_at is not None:
+            if request.request_id in self._priority_borrowed:
+                self.metrics.count(Metric.PRIORITY_BORROW_ADMITTED)
+                self._priority_borrowed.discard(request.request_id)
+            if self.scores.get(request.request_id, 0) > self._agent_scores.get(
+                request.request_id, 0
+            ):
+                self.metrics.count(Metric.JOIN_PRIORITY_ADMITTED)
             self.metrics.admission_wait(
                 max(0, time.monotonic() - queued_at),
                 critical=metadata.critical_path
@@ -585,6 +633,7 @@ class SchedulingController:
         metadata = self.metadata.pop(request.request_id, None)
         started = self.started.pop(request.request_id, None)
         self.scores.pop(request.request_id, None)
+        self._agent_scores.pop(request.request_id, None)
         if metadata is not None and metadata.agent_type and started is not None:
             history = self._history(metadata.agent_type)
             history.importance = metadata.importance
@@ -649,9 +698,12 @@ class SchedulingController:
                     merged.append((a, b))
             self._executed_ranges[request_id] = merged
 
-    def order_key(self, request: Request) -> tuple[int, int, float, str]:
+    def order_key(self, request: Request) -> tuple[int, int, int, float, str]:
         return (
             -self.scores[request.request_id],
+            -self._agent_scores.get(
+                request.request_id, self.scores[request.request_id]
+            ),
             request.priority,
             request.arrival_time,
             request.request_id,
@@ -689,6 +741,8 @@ class SchedulingController:
             num_tokens_main_model=full_tokens,
             apply_admission_cap=True,
         )
+        if shared < demand:
+            return 0.0, 0
         return shared / max(1, shared + demand), shared
 
     def order_candidates(

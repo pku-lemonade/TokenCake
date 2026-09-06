@@ -48,6 +48,11 @@ After checking normal reservation eligibility in agent-score order, the schedule
 can lend otherwise idle reservations to a waiting request that fits the remaining
 physical and committed capacity. It still checks full demand before admitting a
 borrower. A preempted generation remains pending and resumes to completion.
+During normal admission, a request may also borrow an idle reservation when its
+effective score exceeds every waiting owner it borrows from by at least
+`scheduling.priority_borrow_score_margin` (500 points by default). This prevents
+a lower-priority owner from taking capacity that an important request needs to
+advance. Setting the margin to zero disables this early borrowing exception.
 
 When decode requests are running, `scheduling.decode_prefill_token_budget` limits
 the total annotated prefill work per step if set to a positive value. Its default
@@ -58,10 +63,19 @@ prefill, and Mamba block alignment retain their native scheduling rules.
 Under high committed-capacity pressure, annotated requests within
 `scheduling.cache_affinity_score_band` (500 score points by default) can prefer
 prefixes held by running requests. This reduces incremental physical KV demand
-within bounded importance bands. Larger score differences keep their order;
+within bounded importance bands. Shared blocks must at least cover the new
+capacity demand, so short common headers alone do not change ordering.
+Larger score differences keep their order;
 ordinary-request barriers and all admission checks still apply. Setting the band
 to zero disables this preference. GPU shared/exclusive hit-block counters separate
 concurrent sharing from reuse of free cache entries.
+
+By default, `scheduling.inherit_join_priority` gives live branches with the same
+positive `application_started_at_s` and nonempty `join_group` their group's
+highest live agent score. This lets unfinished branches advance alongside a
+critical peer toward the same DAG join. Original agent scores break ties within
+the group. Inheritance expires when the high-scored peer leaves the scheduler;
+missing group metadata and disabled inheritance preserve individual scores.
 
 ## Request metadata
 

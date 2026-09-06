@@ -21,12 +21,14 @@ from vllm.tokencake.scheduling import (
     partition_capacity,
     request_score,
 )
+from vllm.utils.hashing import sha256
 from vllm.v1.core.encoder_cache_manager import EncoderCacheManager
+from vllm.v1.core.kv_cache_utils import get_request_block_hasher
 from vllm.v1.core.sched.request_queue import SchedulingPolicy, create_request_queue
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.kv_cache_interface import KVCacheGroupSpec
 from vllm.v1.outputs import KVConnectorOutput, ModelRunnerOutput
-from vllm.v1.request import RequestStatus
+from vllm.v1.request import Request, RequestStatus
 
 
 def make_scheduler(
@@ -37,6 +39,8 @@ def make_scheduler(
     reserve_generation_tokens=False,
     decode_prefill_token_budget=0,
     cache_affinity_score_band=500,
+    inherit_join_priority=True,
+    priority_borrow_score_margin=500,
     **kwargs,
 ):
     base = create_scheduler(**kwargs)
@@ -57,6 +61,10 @@ def make_scheduler(
                             "reserve_generation_tokens": reserve_generation_tokens,
                             "decode_prefill_token_budget": decode_prefill_token_budget,
                             "cache_affinity_score_band": cache_affinity_score_band,
+                            "inherit_join_priority": inherit_join_priority,
+                            "priority_borrow_score_margin": (
+                                priority_borrow_score_margin
+                            ),
                         }
                         if enabled
                         else {}
@@ -450,11 +458,22 @@ def test_fragmented_reservations_admit_one_borrower_with_full_growth(policy):
 
 
 @pytest.mark.parametrize("policy", ["fcfs", "priority"])
-def test_reserved_beneficiary_precedes_higher_scored_borrower(policy):
+@pytest.mark.parametrize(
+    "importance,margin,expected",
+    [(10, 500, "owner"), (20, 500, "borrower"), (20, 0, "owner")],
+)
+def test_early_borrowing_requires_sufficient_priority_lead(
+    policy, importance, margin, expected
+):
     scheduler = make_scheduler(
-        policy=policy, num_blocks=17, reserve_generation_tokens=True
+        policy=policy,
+        num_blocks=17,
+        reserve_generation_tokens=True,
+        priority_borrow_score_margin=margin,
     )
-    borrower = make_request("borrower", agent_type="first", importance=10, tokens=112)
+    borrower = make_request(
+        "borrower", agent_type="first", importance=importance, tokens=112
+    )
     owner = make_request("owner", agent_type="second", importance=9, tokens=64)
     for request in (borrower, owner):
         request.max_tokens = 64
@@ -467,9 +486,20 @@ def test_reserved_beneficiary_precedes_higher_scored_borrower(policy):
         4,
     )
     output = scheduler.schedule()
-    assert set(output.num_scheduled_tokens) == {"owner"}
-    assert borrower in scheduler.skipped_waiting
+    assert set(output.num_scheduled_tokens) == {expected}
+    assert (owner if expected == "borrower" else borrower) in scheduler.skipped_waiting
     assert controller.metrics.snapshot(0)["scheduling.work_conserving_admitted"] == 0
+    decode(scheduler, output)
+    for _ in range(128):
+        if borrower.is_finished() and owner.is_finished():
+            break
+        decode(scheduler, scheduler.schedule())
+    assert borrower.is_finished() and owner.is_finished()
+    assert borrower.num_output_tokens == owner.num_output_tokens == 64
+    metrics = controller.metrics.snapshot(0)
+    assert metrics["scheduling.priority_borrow_admitted"] == (expected == "borrower")
+    assert metrics["scheduling.physical_preempted"] == 0
+    assert metrics["scheduling.reservation_preempted"] == 0
 
 
 @pytest.mark.parametrize("victim_scheduled", [False, True])
@@ -632,6 +662,106 @@ def test_free_cached_prefix_does_not_count_as_shared_capacity():
     metrics = controller.metrics.snapshot(0)
     assert metrics["scheduling.gpu_shared_hit_blocks"] == 0
     assert metrics["scheduling.gpu_exclusive_hit_blocks"] == 7
+
+
+def test_short_common_header_does_not_override_agent_importance():
+    scheduler = make_scheduler(
+        num_blocks=129, max_num_seqs=2, enable_prefix_caching=True
+    )
+    scheduler.add_request(make_request("anchor", tokens=1536))
+    decode(scheduler, scheduler.schedule())
+    cold = make_request("cold", importance=3, tokens=128, distinct_prompt=True)
+    header = Request(
+        request_id="header",
+        prompt_token_ids=[0] * 16 + [1] * 112,
+        sampling_params=make_request("header").sampling_params,
+        pooling_params=None,
+        block_hasher=get_request_block_hasher(16, sha256),
+    )
+    header.arrival_time = cold.arrival_time
+    for request in (cold, header):
+        scheduler.add_request(request)
+    assert scheduler.kv_cache_manager.get_computed_blocks(header)[1] == 16
+    assert set(scheduler.schedule().num_scheduled_tokens) == {"anchor", "cold"}
+    assert (
+        scheduler._tokencake_scheduling.metrics.snapshot(0)[
+            "scheduling.cache_affinity_admitted"
+        ]
+        == 0
+    )
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+@pytest.mark.parametrize(
+    "enabled,application,group,expected",
+    [
+        (True, 1000.0, "join", "peer"),
+        (False, 1000.0, "join", "other"),
+        (True, 1001.0, "join", "other"),
+        (True, 1000.0, "different", "other"),
+        (True, 0.0, "join", "other"),
+        (True, 1000.0, "", "other"),
+    ],
+)
+def test_join_priority_advances_peers_within_application_and_group(
+    policy, enabled, application, group, expected
+):
+    scheduler = make_scheduler(
+        policy=policy,
+        max_num_batched_tokens=32,
+        max_num_seqs=2,
+        inherit_join_priority=enabled,
+    )
+    leader = make_request("leader", importance=10)
+    leader.sampling_params.extra_args["tokencake"].update(
+        application_started_at_s=1000.0, join_group="join"
+    )
+    scheduler.add_request(leader)
+    decode(scheduler, scheduler.schedule())
+    other = make_request("other", importance=9)
+    other.sampling_params.extra_args["tokencake"].update(
+        application_started_at_s=2000.0, join_group="other"
+    )
+    peer = make_request("peer", importance=1)
+    peer.sampling_params.extra_args["tokencake"].update(
+        application_started_at_s=application, join_group=group
+    )
+    for request in (other, peer):
+        scheduler.add_request(request)
+    first = scheduler.schedule()
+    assert set(first.num_scheduled_tokens) == {"leader", expected}
+    controller = scheduler._tokencake_scheduling
+    assert controller.metrics.snapshot(0)["scheduling.join_priority_admitted"] == (
+        expected == "peer"
+    )
+    decode(scheduler, first, partial_prefills=True)
+    for _ in range(400):
+        if not scheduler.has_requests():
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert all(
+        r.is_finished() and r.num_output_tokens == 128 for r in (leader, other, peer)
+    )
+    assert not controller._agent_scores and not controller.scores
+
+
+def test_join_priority_expires_with_last_high_priority_peer():
+    scheduler = make_scheduler(max_num_seqs=1)
+    leader = make_request("leader", importance=10)
+    peer = make_request("peer", importance=1)
+    other = make_request("other", importance=9)
+    other.sampling_params.extra_args["tokencake"].update(
+        application_started_at_s=2000.0, join_group="other"
+    )
+    for request in (leader, peer):
+        request.sampling_params.extra_args["tokencake"].update(
+            application_started_at_s=1000.0, join_group="join"
+        )
+    for request in (leader, peer, other):
+        scheduler.add_request(request)
+    decode(scheduler, scheduler.schedule())
+    scheduler.finish_requests("leader", RequestStatus.FINISHED_STOPPED)
+    assert set(scheduler.schedule().num_scheduled_tokens) == {"other"}
 
 
 @pytest.mark.parametrize(

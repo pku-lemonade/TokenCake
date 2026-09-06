@@ -1,0 +1,158 @@
+{
+  "campaign_root": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired",
+  "frozen_sha256": "096d3933b411f8d8306c690332e3a2a6274d801debf9a460f60e05fe08995389",
+  "phase": "phase-1",
+  "qps": 1.0,
+  "maximum_launches_per_case": 3,
+  "primary_metric": "performance.total_e2e_s",
+  "prior_exclusions_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/prior-exclusions.json",
+  "prior_exclusions_sha256": "92e54848aadb4cc31d5a49c796329a9b65176d6ec57868019adcbf5fa783d93f",
+  "complete_performance_acceptance": false,
+  "verified_qualifying_artifacts": 60,
+  "references": [
+    {
+      "excluded_launches": [
+        0
+      ],
+      "excluded_result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-final/cases/phase-1/native/qps-1.0/launch-0/result.json",
+      "excluded_result_sha256": "1cbdd3a0bb0aec8ee3f91d3ad55e0b0b17d16d99adf3d77fc379f34e96556fa3",
+      "identity": {
+        "artifact_sha256": "0a8b012b52a1075666c19a8f83d39ef421585fb85310e151c99ae91722c5b331",
+        "case": {
+          "mode": "native",
+          "phase": "phase-1",
+          "qps": 1.0
+        },
+        "config_sha256": "e12aa7389667948adf441fc99513f6d20d9d73adee4313b5b87684b3702219d1",
+        "environment_sha256": "63f0fb78316d7a18230720ab10b1360c1533d468706f0b88dacef690a39aa7c9",
+        "key": "761ca710418a3c7d7aacbfee4e614219b8b21272bd5132ee6baacd0c4a801a6e",
+        "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+        "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+      },
+      "launches_used_including_exclusions": 3,
+      "median_total_e2e_s": 1362.9168685302138,
+      "mode": "native",
+      "qualifying_launches": [
+        1,
+        2
+      ],
+      "results": [
+        {
+          "launch": 1,
+          "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/native/qps-1.0/launch-1/result.json",
+          "result_sha256": "206bed20830decae2466ae0f535b90bda9dca57e800aa380963c9ad158aad40e",
+          "qualifying": true,
+          "total_e2e_s": 1362.8434471823275,
+          "p50_app_latency_s": 1224.0861563682556,
+          "p95_app_latency_s": 1328.8439480662346,
+          "completed_applications": 24,
+          "completed_nodes": 696,
+          "model_calls": 648,
+          "finished_preempted_count": 0,
+          "client_retries": 0,
+          "prompt_halvings": 0,
+          "native_preemptions": 56,
+          "reported_prompt_tokens": 5390297,
+          "reported_generated_tokens": 271200,
+          "verified_artifacts": 15,
+          "monitor_samples": 649
+        },
+        {
+          "launch": 2,
+          "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/native/qps-1.0/launch-2/result.json",
+          "result_sha256": "96a9c31818bb96ac1f52d9c6d198d1c0527e2e231267e0bbc88d7b18d999263a",
+          "qualifying": true,
+          "total_e2e_s": 1362.9902898781002,
+          "p50_app_latency_s": 1227.206327199936,
+          "p95_app_latency_s": 1328.2648721814155,
+          "completed_applications": 24,
+          "completed_nodes": 696,
+          "model_calls": 648,
+          "finished_preempted_count": 0,
+          "client_retries": 0,
+          "prompt_halvings": 0,
+          "native_preemptions": 61,
+          "reported_prompt_tokens": 5390258,
+          "reported_generated_tokens": 271200,
+          "verified_artifacts": 15,
+          "monitor_samples": 654
+        }
+      ]
+    },
+    {
+      "excluded_launches": [
+        0
+      ],
+      "excluded_result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-final/cases/phase-1/agent/qps-1.0/launch-0/result.json",
+      "excluded_result_sha256": "b5f8b5328d5616f77ad83c2cb1a97390cc47dc350c7edbc11a4e77796ab4129a",
+      "identity": {
+        "artifact_sha256": "35e0d404fb0b8332990fa7865ba01df1ef88c1f92458843644794e38bc485c90",
+        "case": {
+          "mode": "agent",
+          "phase": "phase-1",
+          "qps": 1.0
+        },
+        "config_sha256": "cff0d81116c95a90f98fe3fcdaccbee60581852b001cb719ed70a66826fcfddd",
+        "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+        "key": "cf8972cf1d74fa031d488e8ea649c5d65f116f45148427658ae55dfbb6527158",
+        "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+        "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1"
+      },
+      "launches_used_including_exclusions": 3,
+      "median_total_e2e_s": 6187.161663074046,
+      "mode": "agent",
+      "qualifying_launches": [
+        1,
+        2
+      ],
+      "results": [
+        {
+          "launch": 1,
+          "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/agent/qps-1.0/launch-1/result.json",
+          "result_sha256": "b4ee28f59d2a99eaaeaeefdf4d9ea5a1219e2ac04822976fcf74ee9120d8049a",
+          "qualifying": true,
+          "total_e2e_s": 6068.310652703047,
+          "p50_app_latency_s": 5172.733220338821,
+          "p95_app_latency_s": 6043.800874209404,
+          "completed_applications": 24,
+          "completed_nodes": 696,
+          "model_calls": 648,
+          "finished_preempted_count": 0,
+          "client_retries": 0,
+          "prompt_halvings": 0,
+          "native_preemptions": 15158,
+          "tokencake_preemptions": 15158,
+          "tokencake_deferrals": 80797,
+          "tokencake_prefill_caps": 241779,
+          "reported_prompt_tokens": 5392790,
+          "reported_generated_tokens": 271200,
+          "verified_artifacts": 15,
+          "monitor_samples": 2818
+        },
+        {
+          "launch": 2,
+          "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/agent/qps-1.0/launch-2/result.json",
+          "result_sha256": "277e669dd5eeccbd9c5407680b0eb3b97762640abe8d67041931c0fda6517236",
+          "qualifying": true,
+          "total_e2e_s": 6306.012673445046,
+          "p50_app_latency_s": 5406.275972604752,
+          "p95_app_latency_s": 6265.050462341308,
+          "completed_applications": 24,
+          "completed_nodes": 696,
+          "model_calls": 648,
+          "finished_preempted_count": 0,
+          "client_retries": 0,
+          "prompt_halvings": 0,
+          "native_preemptions": 15786,
+          "tokencake_preemptions": 15786,
+          "tokencake_deferrals": 75157,
+          "tokencake_prefill_caps": 243278,
+          "reported_prompt_tokens": 5391378,
+          "reported_generated_tokens": 271200,
+          "verified_artifacts": 15,
+          "monitor_samples": 2947
+        }
+      ]
+    }
+  ]
+}

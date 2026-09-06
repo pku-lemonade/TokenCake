@@ -43,6 +43,7 @@ class Metric(str, Enum):
     PREFILL_CAPACITY_DENIED = "scheduling.prefill_capacity_denied"
     GENERATION_CAPACITY_DENIED = "scheduling.generation_capacity_denied"
     GENERATION_PROGRESS_DEFERRED = "scheduling.generation_progress_deferred"
+    RECLAIM_BENEFICIARY = "scheduling.reclaim_beneficiary"
     RESUME_DEFERRED = "scheduling.resume_deferred"
     ADMITTED = "scheduling.admitted"
     WORK_CONSERVING_ADMITTED = "scheduling.work_conserving_admitted"

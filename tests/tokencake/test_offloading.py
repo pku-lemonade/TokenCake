@@ -52,6 +52,7 @@ def make_offload_scheduler(
     async_scheduling=False,
     max_num_batched_tokens=512,
     decode_prefill_token_budget=0,
+    generation_reserve_mode="reclaim",
 ):
     base = create_scheduler(
         num_blocks=gpu_blocks,
@@ -117,7 +118,10 @@ def make_offload_scheduler(
                 "scheduling": {
                     "enabled": scheduling,
                     **(
-                        {"decode_prefill_token_budget": decode_prefill_token_budget}
+                        {
+                            "decode_prefill_token_budget": decode_prefill_token_budget,
+                            "generation_reserve_mode": generation_reserve_mode,
+                        }
                         if scheduling
                         else {}
                     ),
@@ -487,8 +491,15 @@ def test_preservation_window_bounds_observation_not_prefill_size(
     assert scheduler._tokencake_lifecycles.metrics.snapshot(1) == before
 
 
-def test_waiting_pressure_respects_outstanding_generation_commitments():
-    scheduler = make_offload_scheduler(gpu_blocks=12, scheduling=True)
+@pytest.mark.parametrize(
+    "mode,available,fit", [("all", 3, 0), ("progress", 3, 0), ("reclaim", 7, 4)]
+)
+def test_waiting_pressure_respects_outstanding_generation_commitments(
+    mode, available, fit
+):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=12, scheduling=True, generation_reserve_mode=mode
+    )
     first = request_for("running", tokens=64)
     first.max_tokens = 64
     scheduler.add_request(first)
@@ -497,8 +508,8 @@ def test_waiting_pressure_respects_outstanding_generation_commitments():
     controller = scheduler._tokencake_scheduling
     controller.begin_step(scheduler.waiting, scheduler.running)
     assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == 7
-    assert controller.uncommitted_blocks == 3
-    assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 0
+    assert controller.uncommitted_blocks == available
+    assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == fit
 
 
 def test_waiting_pressure_accounts_for_borrowing_without_overcommitting():

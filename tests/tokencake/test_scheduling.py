@@ -881,8 +881,9 @@ def test_progress_headroom_remains_safe_when_the_finisher_is_aborted():
 @pytest.mark.parametrize("groups", [1, 2])
 @pytest.mark.parametrize("prefix_caching", [False, True])
 @pytest.mark.parametrize("seed", [0, 1, 2])
+@pytest.mark.parametrize("mode", ["progress", "reclaim"])
 def test_progress_headroom_completes_varied_lengths_and_shared_prefixes(
-    groups, prefix_caching, seed
+    groups, prefix_caching, seed, mode
 ):
     rng = random.Random(seed)
     scheduler = make_scheduler(
@@ -891,7 +892,7 @@ def test_progress_headroom_completes_varied_lengths_and_shared_prefixes(
         enable_prefix_caching=prefix_caching,
         max_num_batched_tokens=64,
         reserve_generation_tokens=True,
-        generation_reserve_mode="progress",
+        generation_reserve_mode=mode,
     )
     requests = []
     for index in range(10):
@@ -943,13 +944,16 @@ def test_progress_headroom_adopts_running_work_and_preserves_resume_input():
 
 @pytest.mark.parametrize("policy", ["fcfs", "priority"])
 @pytest.mark.parametrize("prefix_caching", [False, True])
-def test_progress_headroom_preserves_async_inflight_outputs(policy, prefix_caching):
+@pytest.mark.parametrize("mode", ["progress", "reclaim"])
+def test_progress_headroom_preserves_async_inflight_outputs(
+    policy, prefix_caching, mode
+):
     base = make_scheduler(
         policy=policy,
         num_blocks=10,
         enable_prefix_caching=prefix_caching,
         reserve_generation_tokens=True,
-        generation_reserve_mode="progress",
+        generation_reserve_mode=mode,
         async_scheduling=True,
     )
     scheduler = AsyncScheduler(
@@ -976,7 +980,55 @@ def test_progress_headroom_preserves_async_inflight_outputs(policy, prefix_cachi
     assert not pending
     assert all(r.is_finished() and r.num_output_tokens == 64 for r in requests)
     assert all(not r.num_output_placeholders for r in requests)
-    assert all(not r.num_preemptions for r in requests)
+    if mode == "progress":
+        assert all(not r.num_preemptions for r in requests)
+    else:
+        assert any(r.num_preemptions for r in requests)
+        assert (
+            scheduler._tokencake_scheduling.metrics.snapshot(0)[
+                "scheduling.generation_progress_deferred"
+            ]
+            == 0
+        )
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_reclaimed_capacity_stays_with_beneficiary_before_new_admission(policy):
+    scheduler = make_scheduler(
+        policy=policy,
+        num_blocks=8,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="reclaim",
+    )
+    first, second = (make_request(name) for name in ("first", "second"))
+    for request in (first, second):
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    for _ in range(64):
+        decode(scheduler, scheduler.schedule())
+        if first.num_preemptions or second.num_preemptions:
+            break
+    assert first.num_preemptions == 1
+    assert controller._reclaim_beneficiaries == {"second"}
+    assert controller.uncommitted_blocks == 1
+    extra = make_request("extra")
+    extra.max_tokens = 32
+    scheduler.add_request(extra)
+    output = scheduler.schedule()
+    assert set(output.num_scheduled_tokens) == {"second"}
+    decode(scheduler, output)
+    requests = (first, second, extra)
+    for _ in range(256):
+        if all(r.is_finished() for r in requests):
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert all(
+        r.is_finished() and r.num_output_tokens == r.max_tokens for r in requests
+    )
+    assert not controller._reclaim_beneficiaries
+    assert controller.metrics.snapshot(0)["scheduling.reclaim_beneficiary"] >= 1
+    assert controller.metrics.snapshot(0)["scheduling.recomputed_tokens"] > 0
 
 
 def test_generation_capacity_includes_native_speculative_lookahead():

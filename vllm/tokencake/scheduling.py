@@ -155,14 +155,19 @@ class SchedulingController:
         self.num_lookahead_tokens = (
             num_lookahead_tokens if settings.reserve_generation_tokens else 0
         )
-        self._progress_reservation = (
+        selective_generation = (
             settings.reserve_generation_tokens
-            and settings.generation_reserve_mode == "progress"
             and not num_lookahead_tokens
             and all(
                 type(group.kv_cache_spec) is FullAttentionSpec
                 for group in manager.kv_cache_config.kv_cache_groups
             )
+        )
+        self._progress_reservation = (
+            selective_generation and settings.generation_reserve_mode == "progress"
+        )
+        self._reclaim_reservation = (
+            selective_generation and settings.generation_reserve_mode == "reclaim"
         )
         self.metadata: dict[str, TokenCakeMetadata] = {}
         self.scores: dict[str, int] = {}
@@ -187,6 +192,7 @@ class SchedulingController:
         self._prefill_limits: dict[str, int] = {}
         self._prefill_growth: dict[str, int] = {}
         self._growth_wait_started: dict[str, float] = {}
+        self._reclaim_beneficiaries: set[str] = set()
         self._retry_capacity: dict[str, tuple[int, int]] = {}
         self._queued_at: dict[str, float] = {}
         self._completion_epoch = 0
@@ -220,6 +226,7 @@ class SchedulingController:
             self._prefill_limits.clear()
             self._prefill_growth.clear()
             self._growth_wait_started.clear()
+            self._reclaim_beneficiaries.clear()
             self._retry_capacity.clear()
             self._accounting_active = False
             return False
@@ -234,7 +241,7 @@ class SchedulingController:
             for r in requests
             if r.request_id in self._admitted
         }
-        if self._progress_reservation:
+        if self._progress_reservation or self._reclaim_reservation:
             self._prefill_growth = {
                 r.request_id: self._remaining_growth(r, input_only=True)
                 for r in requests
@@ -335,11 +342,16 @@ class SchedulingController:
 
     @property
     def uncommitted_blocks(self) -> int:
-        committed = (
-            sum(self._prefill_growth.values()) + self._generation_headroom
-            if self._progress_reservation
-            else sum(self._growth_commitments.values())
-        )
+        if self._progress_reservation:
+            committed = sum(self._prefill_growth.values()) + self._generation_headroom
+        elif self._reclaim_reservation:
+            committed = sum(self._prefill_growth.values()) + sum(
+                max(0, self._growth_commitments[key] - self._prefill_growth[key])
+                for key in self._reclaim_beneficiaries
+                if key in self._growth_commitments
+            )
+        else:
+            committed = sum(self._growth_commitments.values())
         return self.manager.block_pool.get_num_free_blocks() - committed
 
     @property
@@ -395,6 +407,8 @@ class SchedulingController:
                 apply_admission_cap=True,
             )
 
+        if self._reclaim_reservation:
+            return required(min(request.num_tokens, self.manager.max_model_len))
         full = required(self.admission_tokens(request))
         if not self._progress_reservation:
             return full
@@ -686,7 +700,7 @@ class SchedulingController:
         )
         self._prefill_limits.setdefault(request.request_id, request.num_tokens)
         self._growth_commitments[request.request_id] = self._remaining_growth(request)
-        if self._progress_reservation:
+        if self._progress_reservation or self._reclaim_reservation:
             self._prefill_growth[request.request_id] = self._remaining_growth(
                 request, input_only=True
             )
@@ -741,6 +755,7 @@ class SchedulingController:
         self._growth_commitments.pop(request.request_id, None)
         self._prefill_limits.pop(request.request_id, None)
         self._prefill_growth.pop(request.request_id, None)
+        self._reclaim_beneficiaries.discard(request.request_id)
         self.release()
         self.metrics.count(Metric.PREEMPTED)
         if physical:
@@ -761,6 +776,7 @@ class SchedulingController:
         self._growth_commitments.pop(request.request_id, None)
         self._prefill_limits.pop(request.request_id, None)
         self._prefill_growth.pop(request.request_id, None)
+        self._reclaim_beneficiaries.discard(request.request_id)
         self._retry_capacity.pop(request.request_id, None)
         self._queued_at.pop(request.request_id, None)
         if was_admitted:
@@ -931,6 +947,13 @@ class SchedulingController:
         num_new_tokens: int = 1,
         num_lookahead_tokens: int = 0,
     ) -> Request | None:
+        if (
+            self._reclaim_reservation
+            and request.request_id not in self._reclaim_beneficiaries
+        ):
+            self._reclaim_beneficiaries.add(request.request_id)
+            self.metrics.count(Metric.RECLAIM_BENEFICIARY)
+            self._update_available()
         # Keep native victim selection for ordinary requesting work. Agent
         # scores are comparable only among annotated requests.
         if request.request_id not in self.metadata:
@@ -956,6 +979,8 @@ class SchedulingController:
             )
             - self.manager.block_pool.get_num_free_blocks()
         )
+        if self._reclaim_reservation:
+            needed = max(needed, -self.uncommitted_blocks)
         pool = self.manager.block_pool
         released = {
             r.request_id: sum(pool.blocks[b].ref_cnt == 1 for b in self._block_ids(r))

@@ -39,14 +39,21 @@ these components.
 
 Reservations prioritize new admissions. Requests that have already been admitted
 continue to grow, and subsequent admissions account for their remaining capacity
-commitments. By default, `scheduling.reserve_generation_tokens` also guarantees
-space for generation to complete. Its `scheduling.generation_reserve_mode` defaults
-to `progress`: all admitted input growth is committed, together with enough
-generation capacity for at least one admitted request to finish. Other requests
-can extend their KV only while this completion guarantee remains affordable.
-Requests that temporarily wait retain their computed KV. If previously admitted
-native work already exceeds this bound, a concrete finisher can recover physical
-space through native preemption; displaced requests remain pending.
+commitments. By default, `scheduling.reserve_generation_tokens` also accounts
+for generation after physical reclamation. Its
+`scheduling.generation_reserve_mode` defaults to `reclaim`: all admitted input
+growth is committed, and a request needing physical preemption also commits its
+remaining generation. Victim selection seeks enough space for this commitment,
+and new admissions respect it until the beneficiary finishes or is preempted.
+Running requests retain native physical progress; reservation changes affect
+subsequent admissions. `reclaim_beneficiary` counts newly protected beneficiaries.
+
+The optional `progress` mode commits all admitted input growth together with
+enough generation capacity for at least one admitted request to finish. Other
+requests can extend their KV only while this completion guarantee remains
+affordable. Requests that temporarily wait retain their computed KV. If previously
+admitted native work already exceeds this bound, a concrete finisher can recover
+physical space through native preemption; displaced requests remain pending.
 
 The `all` mode commits every admitted request's declared generation budget.
 It is also the conservative fallback for speculative lookahead and cache groups

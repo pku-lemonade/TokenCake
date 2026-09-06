@@ -120,7 +120,7 @@ def run_application(launcher, peer, monkeypatch, mode, tool_duration=0.03):
         debug=False,
         debug_sleep=False,
         record_output=True,
-        disable_mcp_notifications=mode != "offload-agent",
+        disable_mcp_notifications=mode not in ("offload", "offload-agent"),
         tokencake_mode=mode,
     )
     for variable in ("MCP_URL", "MCP_FINISHED_URL"):
@@ -141,7 +141,7 @@ def run_application(launcher, peer, monkeypatch, mode, tool_duration=0.03):
     return launcher.APPLICATION_INFO[0]
 
 
-@pytest.mark.parametrize("mode", ["native", "agent", "offload-agent"])
+@pytest.mark.parametrize("mode", ["native", "agent", "offload", "offload-agent"])
 def test_retry_ids_bodies_full_application_and_tool_barriers(
     launcher, peer, monkeypatch, mode
 ):
@@ -173,7 +173,7 @@ def test_retry_ids_bodies_full_application_and_tool_barriers(
     events = [call for call in peer[1] if call["path"] != "/v1/completions"]
     tool = info["request_info"]["initial_llm_func"]
     assert tool["tool_latency"] >= 0.03
-    if mode == "offload-agent":
+    if mode in ("offload", "offload-agent"):
         assert [call["body"]["event"] for call in events] == [
             "stall_started",
             "stall_finished",

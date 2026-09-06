@@ -140,6 +140,13 @@ def hardware_preflight() -> dict:
         "available_host_bytes": available,
         "available_ports": [free_port(8055), free_port(8056)],
         "external_processes": processes,
+        "container_memory": {
+            name: path.read_text().strip()
+            for name in ("memory.max", "memory.high", "memory.current", "memory.events")
+            if (path := Path("/sys/fs/cgroup") / name).exists()
+        },
+        "shared_memory_available_bytes": shutil.disk_usage("/dev/shm").free,
+        "maximum_concurrent_host_offload_servers": 1,
     }
 
 
@@ -215,7 +222,10 @@ def prepare(
         raise ValueError(f"Unknown workload profile: {workload_profile}")
     if workload_profile != "frozen" and (
         not cases
-        or any(case.mode not in ("native", "agent", "offload-agent") for case in cases)
+        or any(
+            case.mode not in ("native", "agent", "offload", "offload-agent")
+            for case in cases
+        )
     ):
         raise ValueError("Revised workload requires explicit native or TokenCake cases")
     run_root = run_root.resolve()
@@ -263,6 +273,10 @@ def prepare(
     write_json(run_root / "launcher.json", launcher)
     write_json(run_root / "reference-launcher.json", reference_launcher)
     parameters = workload_parameters()
+    if cases is not None:
+        parameters["qps"] = sorted(
+            set(parameters["qps"]) | {case.qps for case in cases}, reverse=True
+        )
     if workload_profile == "continuation":
         parameters["input_composition"] = "same-role-prefix-v1"
     elif workload_profile in ("conversation", "conversation-tools"):
@@ -360,7 +374,7 @@ def prepare(
                 )
                 helpers = (
                     launcher
-                    if case.mode in ("native", "agent", "offload-agent")
+                    if case.mode in ("native", "agent", "offload", "offload-agent")
                     else reference_launcher
                 )
                 identity = Identity(

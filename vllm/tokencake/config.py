@@ -26,7 +26,7 @@ class SchedulingConfig:
     """Enable agent-aware scheduling."""
     reserve_generation_tokens: StrictBool = True
     """Commit the declared generation budget as logical admission capacity."""
-    generation_reserve_mode: Literal["all", "progress", "reclaim"] = "reclaim"
+    generation_reserve_mode: Literal["all", "progress", "reclaim"] = "all"
     """Reserve generation for all, a finisher, or physical-reclaim beneficiaries."""
     decode_prefill_token_budget: Annotated[StrictInt, Field(ge=0)] = 0
     """Per-step prefill budget during decode; zero keeps the native budget."""

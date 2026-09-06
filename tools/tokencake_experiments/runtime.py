@@ -185,6 +185,8 @@ class Monitor:
                 "power.limit",
                 "clocks.sm",
                 "clocks.mem",
+                "utilization.gpu",
+                "memory.used",
             ],
         )
         self.summary["samples"] += 1
@@ -222,6 +224,59 @@ class Monitor:
         self.thread.join(timeout=30)
         if self.thread.is_alive():
             raise RuntimeError("GPU monitor did not stop")
+
+
+class MetricsMonitor:
+    """Sample the existing endpoint without adding engine-side instrumentation."""
+
+    def __init__(self, port: int, output: Path, interval: float = 2.0) -> None:
+        self.port, self.output, self.interval = port, output, interval
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, name=f"metrics-{port}")
+        self.summary = {"samples": 0, "errors": 0, "interval_s": interval}
+
+    def sample(self, client: httpx.Client) -> dict:
+        started = time.monotonic()
+        response = client.get(f"http://127.0.0.1:{self.port}/metrics")
+        response.raise_for_status()
+        samples = [
+            sample
+            for sample in metric_values(response.text)
+            if not sample["name"].endswith(("_created", "_bucket"))
+        ]
+        return {
+            "timestamp": time.time(),
+            "monotonic": time.monotonic(),
+            "scrape_duration_s": time.monotonic() - started,
+            "metrics": samples,
+        }
+
+    def _run(self) -> None:
+        with self.output.open("x") as stream, httpx.Client(timeout=5) as client:
+            while not self.stop.is_set():
+                try:
+                    sample = self.sample(client)
+                    self.summary["samples"] += 1
+                except Exception as exc:
+                    self.summary["errors"] += 1
+                    sample = {
+                        "timestamp": time.time(),
+                        "monotonic": time.monotonic(),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                stream.write(json.dumps(sample, sort_keys=True) + "\n")
+                stream.flush()
+                self.stop.wait(self.interval)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop.set()
+        self.thread.join(timeout=10)
+        if self.thread.is_alive():
+            raise RuntimeError("Metrics monitor did not stop")
 
 
 def wait_ready(

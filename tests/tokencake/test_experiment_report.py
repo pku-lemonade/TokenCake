@@ -82,6 +82,28 @@ def result(case, seconds, launch=0, *, qualifying=True, preempted=0):
     }
 
 
+def test_expanded_gate_report_checks_both_new_qps_points():
+    qps_values = (1.0, 0.5, 0.2, 0.1, 0.05)
+    identities = [
+        identity(mode, qps)
+        for mode in ("native", "agent", "offload-agent")
+        for qps in qps_values
+    ]
+    rows = [
+        result(case, 70 if case.case.mode == "offload-agent" else 100)
+        for case in identities
+    ]
+    report = evaluate(
+        identities,
+        rows,
+        include_old=False,
+        native_improvement=0.25,
+        qps_values=qps_values,
+    )
+    assert report["passed"] and len(report["gates"]) == 10
+    assert {gate["qps"] for gate in report["gates"]} == set(qps_values)
+
+
 @pytest.mark.parametrize(
     "mode,boundary", [("native", 0.9), ("agent", 1.05), ("old-offload-agent", 1.0)]
 )

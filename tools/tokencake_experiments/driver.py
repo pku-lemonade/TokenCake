@@ -18,11 +18,13 @@ import httpx
 import regex as re
 
 from tools.tokencake_experiments.campaign import (
+    COMPONENT_QPS,
     MOONCAKE_SETTINGS,
     PACKAGE,
     ROOT,
     Case,
     client_command,
+    component_queues,
     initial_queues,
     server_command,
     workload_parameters,
@@ -38,6 +40,7 @@ from tools.tokencake_experiments.preflight import (
 from tools.tokencake_experiments.report import Identity, evaluate, measurements
 from tools.tokencake_experiments.runtime import (
     Activity,
+    MetricsMonitor,
     Monitor,
     Process,
     free_port,
@@ -58,9 +61,10 @@ def load_identity(payload: dict) -> Identity:
     return identity
 
 
-def plan() -> dict:
+def plan(*, components: bool = False) -> dict:
     queues = {}
-    for stage, stage_queues in initial_queues().items():
+    selected = {"components": component_queues()} if components else initial_queues()
+    for stage, stage_queues in selected.items():
         queues[stage] = []
         for queue in stage_queues:
             entries = []
@@ -82,14 +86,18 @@ def plan() -> dict:
                     }
                 )
             queues[stage].append(entries)
+    parameters = workload_parameters()
+    if components:
+        parameters["qps"] = list(COMPONENT_QPS)
     return {
-        "parameters": workload_parameters(),
+        "parameters": parameters,
         "queues": queues,
         "mooncake_settings": MOONCAKE_SETTINGS,
-        "initial_case_count": 15,
+        "initial_case_count": 20 if components else 15,
         "maximum_launches": 3,
         "mooncake_launches_per_qps": 1,
         "thermal_validity_enforced": False,
+        "maximum_concurrent_host_offload_servers": 1,
     }
 
 
@@ -120,7 +128,7 @@ def audit(case_dir: Path, source_result: dict, execution: dict, frozen: dict) ->
         qps = execution["identity"]["case"]["qps"]
         if any(
             applications.get(str(index), {}).get("arrival_offset_s") != offset
-            for index, offset in enumerate(frozen["arrivals"][f"{qps:.1f}"])
+            for index, offset in enumerate(frozen["arrivals"][str(float(qps))])
         ):
             reasons.append("arrival_schedule_mismatch")
     client_log = (
@@ -217,6 +225,7 @@ class Runner:
         self.by_case = {identity.case.name: identity for identity in self.identities}
         self.activity = Activity()
         self.lock = threading.Lock()
+        self.offload_lock = threading.Lock()
         self.stop = threading.Event()
         self.results = self._load_results()
         self.triggered: set[str] = set()
@@ -371,6 +380,7 @@ class Runner:
         }
         write_json(case_dir / "attempt.json", attempt)
         processes: list[Process] = []
+        metrics_monitor: MetricsMonitor | None = None
         server: Process | None = None
         roots: list[int] = []
         self.activity.set(case.device, f"{case.name}/launch-{launch}", roots)
@@ -476,6 +486,10 @@ class Runner:
                     config_format="json",
                 )
                 execution["server_pid"] = server.process.pid
+                metrics_monitor = MetricsMonitor(
+                    port, case_dir / "metrics-timeseries.jsonl"
+                )
+                metrics_monitor.__enter__()
                 execution["client_started_at"] = time.time()
                 start = time.monotonic()
                 execution["client_start_monotonic"] = start
@@ -517,6 +531,12 @@ class Runner:
             if server is not None:
                 execution["server_alive"] = server.process.poll() is None
         finally:
+            if metrics_monitor is not None:
+                try:
+                    metrics_monitor.__exit__()
+                except Exception as exc:
+                    execution["error"] = f"Metrics monitor cleanup failed: {exc}"
+                execution["metrics_monitor"] = metrics_monitor.summary
             for process in reversed(processes):
                 try:
                     process.close()
@@ -585,7 +605,13 @@ class Runner:
                     for row in measurements(identity, self.results)
                 ):
                     continue
-                self.run_case(identity)
+                if case.mode in ("offload", "offload-agent", "old-offload-agent"):
+                    # Two 100 GiB pinned pools exceed this container's budget
+                    # once CUDA, model loading, and allocator overhead are included.
+                    with self.offload_lock:
+                        self.run_case(identity)
+                else:
+                    self.run_case(identity)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(run_queue, queue) for queue in queues]
@@ -599,6 +625,7 @@ class Runner:
             include_old=include_old,
             previously_triggered=self.triggered,
             native_improvement=self.frozen.get("native_improvement", 0.10),
+            qps_values=self.frozen.get("parameters", {}).get("qps", (1.0, 0.5, 0.1)),
         )
         self.triggered.update(report["triggered_gates"])
         number = len(list(self.root.glob("reports/*.json")))
@@ -632,28 +659,34 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     planning = subparsers.add_parser("plan")
     planning.add_argument("--output", type=Path)
+    planning.add_argument("--components", action="store_true")
     for command in ("prepare", "run", "run-cases", "report"):
         subparser = subparsers.add_parser(command)
         subparser.add_argument("run_root", type=Path)
         if command == "prepare":
             subparser.add_argument("--prior-exclusions", type=Path)
             subparser.add_argument("--snapshot-target", action="store_true")
+            subparser.add_argument("--components", action="store_true")
             subparser.add_argument(
                 "--workload-profile", choices=WORKLOAD_PROFILES, default="frozen"
             )
             subparser.add_argument(
-                "--mode", choices=("native", "agent", "offload-agent"), action="append"
+                "--mode",
+                choices=("native", "agent", "offload", "offload-agent"),
+                action="append",
             )
             subparser.add_argument(
-                "--qps", type=float, choices=(1.0, 0.5, 0.1), action="append"
+                "--qps", type=float, choices=COMPONENT_QPS, action="append"
             )
             subparser.add_argument("--gpu", type=int, choices=(0, 1))
     args = parser.parse_args()
     if args.command == "plan":
-        result = plan()
+        result = plan(components=args.components)
         if args.output:
             write_json(args.output, result)
     elif args.command == "prepare":
+        if args.components and (args.mode or args.qps or args.gpu is not None):
+            parser.error("--components cannot be combined with --mode, --qps or --gpu")
         if (args.qps or args.gpu is not None) and not args.mode:
             parser.error("--qps and --gpu require --mode")
         cases = (
@@ -665,6 +698,8 @@ def main() -> None:
             if args.mode
             else None
         )
+        if args.components:
+            cases = [case for queue in component_queues() for case in queue]
         result = prepare(
             args.run_root,
             prior_exclusions=args.prior_exclusions,

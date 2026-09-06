@@ -250,3 +250,32 @@ Phase-2 results and require a recorded reference-equivalence proof before reuse.
 They never pool Phase-1 target measurements with a changed Phase-2 target.
 Phase-2 execution requires the attribution and scope decision specified by the
 change; it is not an automatic tuning loop.
+
+## Five-Load Component Evaluation
+
+The 2026-09-07 follow-up evaluates QPS 1.0, 0.5, 0.2, 0.1 and 0.05 with four
+modes. Report labels `base`, `agent`, `offload`, and `agent_offload` map to driver
+modes `native`, `agent`, `offload`, and `offload-agent`. The offload-only case
+disables the spatial controller while retaining the temporal policy, lifecycle
+metadata, tool events, and native CPU transfer path. Both offload cases use the
+same 100 GiB capacity. The baseline is the immutable native checkout.
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.driver plan --components
+.venv/bin/python -m tools.tokencake_experiments.driver prepare NEW_DIRECTORY \
+  --components --snapshot-target --workload-profile conversation-tools
+.venv/bin/python -m tools.tokencake_experiments.driver run-cases NEW_DIRECTORY
+```
+
+This matrix runs native then offload on GPU0, and agent then combined on GPU1.
+Every mode proceeds from high to low offered load with a fresh server and all
+24 DAGs. Only one host-offload server runs at a time: two 100 GiB pinned pools
+plus runtime overhead cannot coexist within the 240 GiB container memory limit.
+GPU-only cases may overlap a host-offload case. The actual peer state is recorded,
+and time waiting for this experiment resource is outside client E2E timing.
+The existing fifteen-case historical plan remains available without
+`--components`. New campaigns sample the existing metrics endpoint every two
+seconds and retain timestamps and scrape durations in `metrics-timeseries.jsonl`.
+GPU utilization is sampled alongside the existing process and thermal evidence.
+KV occupancy is distinct from hardware utilization and useful-compute occupancy;
+the report must not treat these as interchangeable measurements.

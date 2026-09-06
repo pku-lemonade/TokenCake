@@ -5,6 +5,7 @@
 import hashlib
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from statistics import median
 from typing import Any
@@ -230,6 +231,7 @@ def evaluate(
     previously_triggered: set[str] | None = None,
     reference_equivalence: dict[str, str] | None = None,
     native_improvement: float = 0.10,
+    qps_values: Sequence[float] = QPS,
 ) -> dict:
     lookup = {
         (identity.case.mode, identity.case.qps): identity for identity in identities
@@ -241,7 +243,7 @@ def evaluate(
     gates = []
     unprepared = []
     requested: dict[str, int] = {}
-    for qps in QPS:
+    for qps in qps_values:
         target = lookup.get(("offload-agent", qps))
         for mode in BOUNDARIES:
             if mode == "old-offload-agent" and not include_old:
@@ -272,7 +274,7 @@ def evaluate(
             for key, count in gate["requested_launches"].items():
                 requested[key] = max(requested.get(key, 0), count)
     references = []
-    for qps in QPS:
+    for qps in qps_values:
         identity = lookup.get(("mooncake", qps))
         if identity is None:
             continue

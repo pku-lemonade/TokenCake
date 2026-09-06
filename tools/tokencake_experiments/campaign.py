@@ -14,12 +14,15 @@ MODEL = Path("/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct")
 WORKLOAD_REVISION = "be5f23ca50818f74f485ea82f42138ec9506e1f0"
 BASELINE_REVISION = "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af"
 QPS = (1.0, 0.5, 0.1)
+COMPONENT_QPS = (1.0, 0.5, 0.2, 0.1, 0.05)
 MOONCAKE_SETTINGS = {
     "global_segment_size": 100 * 2**30,
     "local_buffer_size": 2**30,
     "protocol": "tcp",
 }
-Mode = Literal["native", "agent", "offload-agent", "old-offload-agent", "mooncake"]
+Mode = Literal[
+    "native", "agent", "offload", "offload-agent", "old-offload-agent", "mooncake"
+]
 
 
 @dataclass(frozen=True)
@@ -49,13 +52,14 @@ class Case:
         if self.mode not in (
             "native",
             "agent",
+            "offload",
             "offload-agent",
             "old-offload-agent",
             "mooncake",
         ):
             raise ValueError("Unknown benchmark mode")
-        if self.qps not in QPS:
-            raise ValueError("The accepted QPS values are 1.0, 0.5 and 0.1")
+        if self.qps not in COMPONENT_QPS:
+            raise ValueError("The accepted QPS values are 1.0, 0.5, 0.2, 0.1 and 0.05")
         if self.phase not in ("phase-1", "phase-2"):
             raise ValueError("Unknown implementation phase")
         if self.phase == "phase-2" and self.mode != "offload-agent":
@@ -72,7 +76,7 @@ class Case:
     @property
     def name(self) -> str:
         suffix = "" if self.gpu_index is None else f"/gpu-{self.gpu_index}"
-        return f"{self.phase}/{self.mode}/qps-{self.qps:.1f}{suffix}"
+        return f"{self.phase}/{self.mode}/qps-{float(self.qps)}{suffix}"
 
     def payload(self) -> dict:
         return asdict(self) | {"device": asdict(self.device), "name": self.name}
@@ -89,6 +93,21 @@ def initial_queues() -> dict[str, list[list[Case]]]:
             [Case("mooncake", qps) for qps in QPS],
         ],
     }
+
+
+def component_queues() -> list[list[Case]]:
+    return [
+        [
+            Case(mode, qps, gpu_index=0)
+            for mode in ("native", "offload")
+            for qps in COMPONENT_QPS
+        ],
+        [
+            Case(mode, qps, gpu_index=1)
+            for mode in ("agent", "offload-agent")
+            for qps in COMPONENT_QPS
+        ],
+    ]
 
 
 def workload_parameters() -> dict:
@@ -141,10 +160,12 @@ def server_command(
             "--additional-config",
             json.dumps({"tokencake": {"offload": {"enabled": False}}}),
         ]
-    elif case.mode == "offload-agent":
+    elif case.mode in ("offload", "offload-agent"):
         command += [
             "--additional-config",
-            '{"tokencake":{}}',
+            '{"tokencake":{"scheduling":{"enabled":false}}}'
+            if case.mode == "offload"
+            else '{"tokencake":{}}',
             "--kv-offloading-size",
             "100",
             "--kv-offloading-backend",
@@ -217,7 +238,7 @@ def client_command(
         "--arrival_trace_file",
         str(arrival_trace),
     ]
-    if case.mode in ("native", "agent", "offload-agent"):
+    if case.mode in ("native", "agent", "offload", "offload-agent"):
         command += ["--tokencake-mode", case.mode]
     elif case.mode == "mooncake":
         command += ["--disable_mcp_notifications"]

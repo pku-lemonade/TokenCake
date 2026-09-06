@@ -77,9 +77,9 @@ diff --git a/vllm_serving.py b/vllm_serving.py
 @@ -825,2 +857,6 @@
      parser.add_argument("--disable_mcp_notifications", action="store_true")
 +    parser.add_argument("--tokencake-mode", required=True,
-+                        choices=["native", "agent", "offload-agent"])
++                        choices=["native", "agent", "offload", "offload-agent"])
      args = parser.parse_args()
-+    args.disable_mcp_notifications = args.tokencake_mode != "offload-agent"
++    args.disable_mcp_notifications = args.tokencake_mode not in ("offload", "offload-agent")
 @@ -830,2 +866,2 @@
 -    MCP_URL = f"http://localhost:{args.port}/v1/mcp"
 -    MCP_FINISHED_URL = f"http://localhost:{args.port}/v1/mcp/finished"

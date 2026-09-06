@@ -5,9 +5,11 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import replace
 
+import httpx
 import psutil
 import pytest
 
@@ -19,7 +21,7 @@ from tools.tokencake_experiments.campaign import (
     client_command,
     server_command,
 )
-from tools.tokencake_experiments.driver import Runner, audit
+from tools.tokencake_experiments.driver import Runner, audit, plan
 from tools.tokencake_experiments.materialize import digest, materialize
 from tools.tokencake_experiments.preflight import (
     adapter,
@@ -30,6 +32,7 @@ from tools.tokencake_experiments.preflight import (
 from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
     Activity,
+    MetricsMonitor,
     Monitor,
     Process,
     cpu_set,
@@ -79,6 +82,62 @@ def test_environment_fingerprint_keeps_performance_knobs(monkeypatch):
     assert environment["VLLM_MAX_NUM_BATCHED_TOKENS"] == "2048"
     assert environment["TOKENCAKE_POLICY"] == "test"
     assert "VLLM_API_KEY" not in environment and "HF_TOKEN" not in environment
+
+
+def test_component_matrix_has_twenty_distinct_cases_and_independent_switches():
+    matrix = plan(components=True)
+    cases = [case for queue in matrix["queues"]["components"] for case in queue]
+    assert len(cases) == matrix["initial_case_count"] == 20
+    assert len({case["name"] for case in cases}) == 20
+    assert {(case["mode"], case["qps"]) for case in cases} == {
+        (mode, qps)
+        for mode in ("native", "agent", "offload", "offload-agent")
+        for qps in (1.0, 0.5, 0.2, 0.1, 0.05)
+    }
+    assert Case("native", 0.05).name != Case("native", 0.1).name
+    assert Case("native", 1).name.endswith("qps-1.0")
+    for case in cases:
+        command = case["server_command"]
+        mode = case["mode"]
+        if mode == "native":
+            assert "--additional-config" not in command
+        else:
+            config = json.loads(command[command.index("--additional-config") + 1])[
+                "tokencake"
+            ]
+            assert config.get("scheduling", {}).get("enabled", True) == (
+                mode != "offload"
+            )
+            assert config.get("offload", {}).get("enabled", True) == (mode != "agent")
+        assert ("--kv-offloading-size" in command) == (
+            mode in ("offload", "offload-agent")
+        )
+        assert case["client_command"][-2:] == ["--tokencake-mode", mode]
+
+
+def test_metrics_sampling_retains_occupancy_labels_and_transfer_totals(tmp_path):
+    metrics = (
+        "vllm:kv_cache_usage_perc 0.75\n"
+        'vllm:kv_offload_total_bytes_total{transfer_type="CPU_to_GPU"} 1024\n'
+        'vllm:latency_bucket{le="1"} 3\n'
+        "vllm:latency_created 100\n"
+        "vllm:latency_sum 2\n"
+        "vllm:latency_count 3\n"
+    )
+    monitor = MetricsMonitor(1, tmp_path / "samples.jsonl")
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=metrics))
+    ) as client:
+        sample = monitor.sample(client)
+    observed = {item["name"]: item for item in sample["metrics"]}
+    assert observed["vllm:kv_cache_usage_perc"]["value"] == 0.75
+    assert observed["vllm:kv_offload_total_bytes_total"]["labels"] == {
+        "transfer_type": "CPU_to_GPU"
+    }
+    assert (
+        "vllm:latency_bucket" not in observed and "vllm:latency_created" not in observed
+    )
+    assert observed["vllm:latency_count"]["value"] == 3
 
 
 def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
@@ -333,6 +392,52 @@ def test_process_affinity_and_child_cleanup(tmp_path):
         time.sleep(0.01)
 
 
+def test_host_offload_cases_serialize_but_gpu_only_work_can_overlap(
+    tmp_path, monkeypatch
+):
+    cases = [
+        Case("offload", 1.0, gpu_index=0),
+        Case("agent", 1.0, gpu_index=1),
+        Case("offload-agent", 1.0, gpu_index=1),
+    ]
+    identities = [
+        Identity(case, "code", "env", "launcher", "input", "config") for case in cases
+    ]
+    write_json(
+        tmp_path / "frozen.json",
+        {"identities": [item.payload() for item in identities]},
+    )
+    runner = Runner(tmp_path)
+    entered = threading.Event()
+    gpu_only_done = threading.Event()
+    active: set[str] = set()
+    guard = threading.Lock()
+    observed = []
+
+    def run_case(identity):
+        mode = identity.case.mode
+        if mode == "agent":
+            assert entered.wait(5)
+            with guard:
+                observed.append((mode, frozenset(active)))
+            gpu_only_done.set()
+            return
+        with guard:
+            assert not active
+            active.add(mode)
+            observed.append((mode, frozenset(active)))
+        if mode == "offload":
+            entered.set()
+            assert gpu_only_done.wait(5)
+        with guard:
+            active.remove(mode)
+
+    monkeypatch.setattr(runner, "run_case", run_case)
+    runner.run_queues([[cases[0]], cases[1:]], initial=True)
+    assert ("agent", frozenset({"offload"})) in observed
+    assert len(observed) == 3 and not active
+
+
 def test_gpu_monitor_records_peer_without_thermal_invalidation(tmp_path, monkeypatch):
     activity = Activity()
     activity.set(DEVICES[0], "native", [os.getpid()])
@@ -361,9 +466,9 @@ def test_gpu_monitor_records_peer_without_thermal_invalidation(tmp_path, monkeyp
     processes = [controlled, peer]
     monkeypatch.setattr(
         "tools.tokencake_experiments.runtime.query_nvidia",
-        lambda kind, fields: processes
-        if kind == "compute-apps"
-        else [{"temperature.gpu": "99"}],
+        lambda kind, fields: (
+            processes if kind == "compute-apps" else [{"temperature.gpu": "99"}]
+        ),
     )
     monitor = Monitor(DEVICES[0], activity, tmp_path / "monitor.jsonl")
     sample = monitor.sample()

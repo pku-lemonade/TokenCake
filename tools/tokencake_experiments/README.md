@@ -260,6 +260,10 @@ disables the spatial controller while retaining the temporal policy, lifecycle
 metadata, tool events, and native CPU transfer path. Both offload cases use the
 same 100 GiB capacity. The baseline is the immutable native checkout.
 
+The completed measurements and limitations are documented in the
+[component evaluation](reports/component-evaluation.md) and
+[measurement methodology](reports/component-methodology.md).
+
 ```bash
 .venv/bin/python -m tools.tokencake_experiments.driver plan --components
 .venv/bin/python -m tools.tokencake_experiments.driver prepare NEW_DIRECTORY \
@@ -298,6 +302,9 @@ tables and plots require all twenty component cases, the same workload and
 arrival traces, one target runtime, and matching resolved serving parameters.
 They retain excluded launches and report medians of qualifying observations;
 plotted ranges are observed minima and maxima, not confidence intervals.
+Critical admission waits also retain the worst observed value across launches.
+Stacked prefill sources and application CDFs use the actual launch with median
+E2E; independently aggregated source medians need not add up to a real input.
 The JSON retains individual application latencies and critical-path timing;
 CSV tables and PNG/PDF figures provide portable summaries.
 

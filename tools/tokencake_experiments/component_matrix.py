@@ -142,6 +142,11 @@ def summarize(groups):
                 critical_wait_max_s=aggregate(
                     group, lambda r: r["critical_wait_max_s"]
                 ),
+                critical_wait_observed_max_s=(
+                    max(r["critical_wait_max_s"] for r in group)
+                    if all(r["critical_wait_max_s"] is not None for r in group)
+                    else None
+                ),
             )
             for section, names in (
                 ("scheduling", tuple(group[0]["scheduling"])),
@@ -256,7 +261,8 @@ def write_report(rows, destination):
     destination.mkdir(parents=True, exist_ok=False)
     payload = {
         "aggregation": (
-            "Median of qualifying launches per metric; "
+            "Median of qualifying launches per metric, except explicitly "
+            "reported observed maxima and minimum coverage; "
             "ranges are observed, not confidence intervals."
         ),
         "groups": table,
@@ -268,7 +274,7 @@ def write_report(rows, destination):
         json.dumps(payload, indent=2, sort_keys=True) + "\n"
     )
     with (destination / "measurements.csv").open("x", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(table[0]))
+        writer = csv.DictWriter(stream, fieldnames=list(table[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(table)
     sections = [
@@ -314,7 +320,11 @@ def write_report(rows, destination):
             [
                 ("qps", "QPS"),
                 ("mode", "Mode"),
-                ("critical_wait_max_s", "Max critical admission wait (s)"),
+                ("critical_wait_max_s", "Median max critical admission wait (s)"),
+                (
+                    "critical_wait_observed_max_s",
+                    "Observed max critical admission wait (s)",
+                ),
                 ("scheduling.critical_wait_ge_60s", "Critical waits >= 60 s"),
                 ("scheduling.critical_wait_ge_180s", "Critical waits >= 180 s"),
                 ("critical_node_llm.mean", "Critical node mean LLM (s)"),

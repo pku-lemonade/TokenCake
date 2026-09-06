@@ -48,6 +48,12 @@ def main():
         fig.savefig(args.output / f"{name}.pdf", bbox_inches="tight")
         plt.close(fig)
 
+    def representative_run(mode, qps):
+        group = groups[mode, qps]
+        return sorted(group, key=lambda r: r["performance"]["total_e2e_s"])[
+            len(group) // 2
+        ]
+
     def plot(ax, getter, title, ylabel):
         for mode, label, color in zip(MODES, LABELS, COLORS):
             values = [[getter(row) for row in groups[mode, qps]] for qps in LOADS]
@@ -155,10 +161,7 @@ def main():
         for source, color in zip(sources, source_colors):
             values = np.array(
                 [
-                    median(
-                        row["first_prefill_sources"][source] / 1e6
-                        for row in groups[mode, qps]
-                    )
+                    representative_run(mode, qps)["first_prefill_sources"][source] / 1e6
                     for mode in MODES
                 ]
             )
@@ -168,16 +171,19 @@ def main():
         ax.tick_params(axis="x", labelrotation=45)
         ax.grid(axis="y", alpha=0.2)
     axes[0].set_ylabel("First-prefill input tokens (millions)")
-    axes[-1].legend(fontsize=8)
+    fig.legend(
+        *axes[0].get_legend_handles_labels(),
+        loc="outside upper center",
+        ncol=3,
+        fontsize=9,
+        frameon=False,
+    )
     save(fig, "prefill-sources")
 
     fig, axes = plt.subplots(1, 5, figsize=(17, 4), layout="constrained", sharey=True)
     for ax, qps in zip(axes, LOADS):
         for mode, label, color in zip(MODES, LABELS, COLORS):
-            representative = sorted(
-                groups[mode, qps], key=lambda r: r["performance"]["total_e2e_s"]
-            )[len(groups[mode, qps]) // 2]
-            values = sorted(representative["application_latencies_s"])
+            values = sorted(representative_run(mode, qps)["application_latencies_s"])
             ax.step(
                 values,
                 np.arange(1, len(values) + 1) / len(values),

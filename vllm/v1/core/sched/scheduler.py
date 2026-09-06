@@ -623,6 +623,8 @@ class Scheduler(SchedulerInterface):
         # Next, schedule the WAITING requests.
         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
             step_skipped_waiting = create_request_queue(self.policy)
+            reservation_deferred: list[Request] = []
+            borrow_reserved = False
             agent_order: deque[tuple[Request, RequestQueue]] | None = None
             cache_agent_order = (
                 tokencake is not None
@@ -633,9 +635,21 @@ class Scheduler(SchedulerInterface):
                 )
             )
 
-            while (self.waiting or self.skipped_waiting) and token_budget > 0:
+            while (
+                self.waiting or self.skipped_waiting or reservation_deferred
+            ) and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
                     break
+
+                if not self.waiting and not self.skipped_waiting:
+                    # Every eligible request has had its reserved-capacity turn.
+                    # Reconsider concrete beneficiaries of otherwise idle reserves.
+                    for candidate in reservation_deferred:
+                        step_skipped_waiting.remove_request(candidate)
+                        self.waiting.add_request(candidate)
+                    reservation_deferred.clear()
+                    borrow_reserved = True
+                    agent_order = None
 
                 request_queue = self._select_waiting_queue_for_scheduling()
                 assert request_queue is not None
@@ -867,8 +881,14 @@ class Scheduler(SchedulerInterface):
                     num_lookahead_tokens=effective_lookahead_tokens,
                     num_external_computed_tokens=num_external_computed_tokens,
                     num_encoder_tokens=num_encoder_tokens,
+                    borrow_reserved=borrow_reserved,
                 ):
                     tokencake.defer(request)
+                    if (
+                        not borrow_reserved
+                        and request_id in tokencake.reservation_deferred
+                    ):
+                        reservation_deferred.append(request)
                     request_queue.remove_request(request)
                     step_skipped_waiting.prepend_request(request)
                     continue
@@ -895,7 +915,11 @@ class Scheduler(SchedulerInterface):
                     break
 
                 if tokencake is not None:
-                    tokencake.commit(request, num_encoder_tokens=num_encoder_tokens)
+                    tokencake.commit(
+                        request,
+                        num_encoder_tokens=num_encoder_tokens,
+                        borrow_reserved=borrow_reserved,
+                    )
                     tokencake.cache_hits(
                         request,
                         num_new_local_computed_tokens,

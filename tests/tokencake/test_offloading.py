@@ -25,6 +25,7 @@ from vllm.tokencake.events import LifecycleEvent
 from vllm.tokencake.metrics import Metric
 from vllm.tokencake.offload_policy import Pressure, evaluate_benefit, waiting_pressure
 from vllm.tokencake.protocol import TokenCakeMetadata
+from vllm.tokencake.scheduling import CapacityPlan
 from vllm.v1.engine.core import EngineCore
 from vllm.v1.kv_cache_interface import (
     KVCacheGroupSpec,
@@ -489,6 +490,29 @@ def test_waiting_pressure_respects_outstanding_generation_commitments():
     assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == 7
     assert controller.uncommitted_blocks == 3
     assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 0
+
+
+def test_waiting_pressure_accounts_for_borrowing_without_overcommitting():
+    scheduler = make_offload_scheduler(scheduling=True)
+    for name, tokens in (("first", 112), ("second", 192)):
+        request = request_for(name, tokens=tokens)
+        request.sampling_params.extra_args["tokencake"]["agent_type"] = name
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    controller.begin_step(scheduler.waiting, scheduler.running)
+    controller.plan = CapacityPlan(
+        {"first", "second"},
+        {"first": 10.0, "second": 9.0},
+        {"first": 6, "second": 6},
+        4,
+    )
+    controller.waiting_critical = {"first", "second"}
+    controller.release()
+    before = controller.metrics.snapshot(2)
+    assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 7
+    assert controller.metrics.snapshot(2) == before
+    assert not controller.charges and not controller.reservation_deferred
 
 
 def test_ordinary_store_progress_and_completion_delegate_to_native_connector():

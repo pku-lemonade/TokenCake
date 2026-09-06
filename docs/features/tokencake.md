@@ -37,6 +37,18 @@ Offload-only mode uses `first_fit` temporal selection. See
 and defaults. The legacy agent CLI flags and environment variables do not enable
 these components.
 
+Reservations prioritize new admissions. Requests that have already been admitted
+continue to grow, and subsequent admissions account for their remaining capacity
+commitments. By default, `scheduling.reserve_generation_tokens` commits the known
+input plus the declared generation budget; setting it to `false` commits only
+the known input. Both use the native multi-group capacity calculation and allocate
+KV incrementally. Large unused generation budgets can reduce concurrency.
+
+After checking normal reservation eligibility in agent-score order, the scheduler
+can lend otherwise idle reservations to a waiting request that fits the remaining
+physical and committed capacity. It still checks full demand before admitting a
+borrower. A preempted generation remains pending and resumes to completion.
+
 ## Request metadata
 
 Generate a fresh ID of the form `tc-` followed by lowercase UUID4 hex for every

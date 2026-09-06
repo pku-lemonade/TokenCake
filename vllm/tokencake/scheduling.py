@@ -175,6 +175,7 @@ class SchedulingController:
         self._retry_capacity: dict[str, tuple[int, int]] = {}
         self._queued_at: dict[str, float] = {}
         self._completion_epoch = 0
+        self.reservation_deferred: set[str] = set()
 
     def associate(self, request_id: str, metadata: TokenCakeMetadata) -> None:
         self.metadata[request_id] = metadata
@@ -188,6 +189,7 @@ class SchedulingController:
         return history
 
     def begin_step(self, waiting: Iterable[Request], running: list[Request]) -> bool:
+        self.reservation_deferred.clear()
         if not self.metadata:
             self.charges.clear()
             self._used.clear()
@@ -346,7 +348,7 @@ class SchedulingController:
             self.release()
 
     def _consumption(
-        self, request: Request, demand: int
+        self, request: Request, demand: int, *, borrow_reserved: bool = False
     ) -> list[tuple[str | None, int]] | None:
         shared = min(demand, self.shared_available)
         usage: list[tuple[str | None, int]] = [(None, shared)]
@@ -363,8 +365,9 @@ class SchedulingController:
             remaining -= own
             if remaining == 0:
                 return usage
-        if self.waiting_critical - {key} or (
-            key not in self.plan.critical and self.waiting_critical
+        if not borrow_reserved and (
+            self.waiting_critical - {key}
+            or (key not in self.plan.critical and self.waiting_critical)
         ):
             return None
         donors = sorted(
@@ -388,6 +391,7 @@ class SchedulingController:
         num_lookahead_tokens: int = 0,
         num_external_computed_tokens: int = 0,
         num_encoder_tokens: int = 0,
+        borrow_reserved: bool = False,
     ) -> bool:
         # An asynchronous cache load is already admitted and must be allowed
         # to finish admission using the capacity committed before the load.
@@ -447,9 +451,14 @@ class SchedulingController:
         ):
             self.metrics.count(Metric.RESUME_DEFERRED)
             return False
-        allowed = self._consumption(request, demand) is not None
+        allowed = (
+            self._consumption(request, demand, borrow_reserved=borrow_reserved)
+            is not None
+        )
         if not allowed:
             self.metrics.count(Metric.RESERVATION_DENIED)
+            if request.request_id in self.metadata:
+                self.reservation_deferred.add(request.request_id)
         return allowed
 
     def commit(
@@ -459,6 +468,7 @@ class SchedulingController:
         running: bool = False,
         num_encoder_tokens: int = 0,
         new_blocks: KVCacheBlocks | None = None,
+        borrow_reserved: bool = False,
     ) -> None:
         block_ids = sorted(
             (
@@ -473,7 +483,9 @@ class SchedulingController:
             )
             - self.charges.keys()
         )
-        usage = self._consumption(request, len(block_ids))
+        usage = self._consumption(
+            request, len(block_ids), borrow_reserved=borrow_reserved
+        )
         if usage is None and (running or request.request_id in self._admitted):
             # Accepted work may grow past a revised partition. Charge that debt
             # to shared capacity; later admissions pay it down as blocks free.
@@ -494,6 +506,9 @@ class SchedulingController:
         )
         self._growth_commitments[request.request_id] = self._remaining_growth(request)
         self._retry_capacity.pop(request.request_id, None)
+        self.reservation_deferred.discard(request.request_id)
+        if borrow_reserved and not running:
+            self.metrics.count(Metric.WORK_CONSERVING_ADMITTED)
         self._update_available()
         metadata = self.metadata.get(request.request_id)
         if metadata is None:

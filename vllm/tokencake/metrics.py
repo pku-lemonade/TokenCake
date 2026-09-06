@@ -44,6 +44,7 @@ class Metric(str, Enum):
     GENERATION_CAPACITY_DENIED = "scheduling.generation_capacity_denied"
     RESUME_DEFERRED = "scheduling.resume_deferred"
     ADMITTED = "scheduling.admitted"
+    WORK_CONSERVING_ADMITTED = "scheduling.work_conserving_admitted"
     CRITICAL_ADMITTED = "scheduling.critical_admitted"
     CRITICAL_WAIT_GE_60S = "scheduling.critical_wait_ge_60s"
     CRITICAL_WAIT_GE_180S = "scheduling.critical_wait_ge_180s"

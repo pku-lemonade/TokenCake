@@ -153,30 +153,37 @@ def waiting_pressure(
             admission = max(admission, full_demand)
         if demand <= 0 or demand > free or admission > uncommitted:
             continue
+        borrow_reserved = False
         if (
             controller is not None
             and controller._consumption(request, admission) is None
         ):
-            continue
+            if (
+                controller._consumption(request, admission, borrow_reserved=True)
+                is None
+            ):
+                continue
+            borrow_reserved = True
         score = (
             controller.scores.get(request.request_id, 0)
             if controller is not None
             else -request.priority
         )
-        candidates.append((request, demand, tokens, score, admission))
+        candidates.append((request, demand, tokens, score, admission, borrow_reserved))
     if temporal_selection == "priority_first":
         candidates.sort(key=lambda c: (c[3], c[1], -c[0].arrival_time), reverse=True)
     elif temporal_selection == "best_fit":
         candidates.sort(
             key=lambda c: (-abs(window - c[1]), c[3], -c[0].arrival_time), reverse=True
         )
+    candidates.sort(key=lambda c: c[5])
     slots = scheduler.max_num_running_reqs - len(scheduler.running)
     remaining_blocks = free
     remaining_commitment = uncommitted
     remaining_tokens = scheduler.max_num_scheduled_tokens
     fit = 0
     if scheduler.pause_state == PauseState.UNPAUSED:
-        for _, demand, tokens, _, admission in candidates:
+        for _, demand, tokens, _, admission, _ in candidates:
             if slots <= 0:
                 break
             if (

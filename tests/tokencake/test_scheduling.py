@@ -302,6 +302,65 @@ def test_reservation_denial_and_allocation_failure_leave_request_pending():
     assert not scheduler._tokencake_scheduling.charges
 
 
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_fragmented_reservations_admit_one_borrower_with_full_growth(policy):
+    scheduler = make_scheduler(
+        policy=policy, num_blocks=17, reserve_generation_tokens=True
+    )
+    first = make_request("first", agent_type="first", importance=10, tokens=112)
+    second = make_request("second", agent_type="second", importance=9, tokens=192)
+    for request in (first, second):
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    controller.plan = CapacityPlan(
+        {"first", "second"},
+        {"first": 10.0, "second": 9.0},
+        {"first": 6, "second": 6},
+        4,
+    )
+    output = scheduler.schedule()
+    assert set(output.num_scheduled_tokens) == {"first"}
+    assert second in scheduler.skipped_waiting
+    assert controller._growth_commitments == {"first": 4}
+    assert controller.uncommitted_blocks == 5
+    assert len(controller.charges) == 7
+    decode(scheduler, output)
+    for _ in range(128):
+        if first.is_finished() and second.is_finished():
+            break
+        decode(scheduler, scheduler.schedule())
+    assert first.num_output_tokens == second.num_output_tokens == 64
+    assert first.is_finished() and second.is_finished()
+    metrics = controller.metrics.snapshot(0)
+    assert metrics["scheduling.work_conserving_admitted"] >= 1
+    assert metrics["scheduling.physical_preempted"] == 0
+    assert metrics["scheduling.reservation_preempted"] == 0
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_reserved_beneficiary_precedes_higher_scored_borrower(policy):
+    scheduler = make_scheduler(
+        policy=policy, num_blocks=17, reserve_generation_tokens=True
+    )
+    borrower = make_request("borrower", agent_type="first", importance=10, tokens=112)
+    owner = make_request("owner", agent_type="second", importance=9, tokens=64)
+    for request in (borrower, owner):
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    controller.plan = CapacityPlan(
+        {"first", "second"},
+        {"first": 10.0, "second": 9.0},
+        {"first": 6, "second": 6},
+        4,
+    )
+    output = scheduler.schedule()
+    assert set(output.num_scheduled_tokens) == {"owner"}
+    assert borrower in scheduler.skipped_waiting
+    assert controller.metrics.snapshot(0)["scheduling.work_conserving_admitted"] == 0
+
+
 @pytest.mark.parametrize("victim_scheduled", [False, True])
 @pytest.mark.parametrize("margin", [10.0, 100.0])
 def test_native_preemption_rollback_and_recomputation(victim_scheduled, margin):

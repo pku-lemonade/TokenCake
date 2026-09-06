@@ -12,9 +12,11 @@ SOURCE_REVISION = "7a608a4e53ea990b2540c93b4d28cb795b905109"
 PATCH = Path(__file__).with_name("launcher.patch")
 CONTINUATION_PATCH = Path(__file__).with_name("continuation.patch")
 CONVERSATION_PATCH = Path(__file__).with_name("conversation.patch")
+TOOL_BUDGET_PATCH = Path(__file__).with_name("tool-budget.patch")
 WORKLOAD_PATCHES = {
-    "continuation": CONTINUATION_PATCH,
-    "conversation": CONVERSATION_PATCH,
+    "continuation": (CONTINUATION_PATCH,),
+    "conversation": (CONVERSATION_PATCH,),
+    "conversation-tools": (CONVERSATION_PATCH, TOOL_BUDGET_PATCH),
 }
 WORKLOAD_PROFILES = ("frozen", *WORKLOAD_PATCHES)
 HELPERS = (
@@ -93,27 +95,32 @@ def materialize(
     if patched:
         git(destination, "apply", "--check", "--recount", "--unidiff-zero", str(PATCH))
         git(destination, "apply", "--recount", "--unidiff-zero", str(PATCH))
-    workload_patch = WORKLOAD_PATCHES.get(workload_profile)
-    if workload_patch is not None:
+    workload_patches = WORKLOAD_PATCHES.get(workload_profile, ())
+    for workload_patch in workload_patches:
         git(destination, "apply", "--check", "--recount", str(workload_patch))
         git(destination, "apply", "--recount", str(workload_patch))
     modified = git(destination, "diff", "--name-only").splitlines()
     expected = {"vllm_serving.py"} if patched else set()
-    if workload_patch is not None:
+    if workload_patches:
         expected.update(("vllm_serving.py", "agent/app/code_writer_paper_pressure.py"))
     if set(modified) != expected:
         raise RuntimeError(f"Unexpected launcher changes: {modified}")
     if git(source, "status", "--porcelain"):
         raise RuntimeError("Source worktree changed during materialization")
+    workload_hashes = {path.name: digest(path) for path in workload_patches}
+    workload_hash = next(iter(workload_hashes.values()), None)
+    if len(workload_hashes) > 1:
+        workload_hash = hashlib.sha256(
+            "".join(workload_hashes.values()).encode("ascii")
+        ).hexdigest()
     return {
         "source_revision": revision,
         "source": str(source),
         "checkout": str(destination),
         "patch_sha256": digest(PATCH) if patched else None,
         "workload_profile": workload_profile,
-        "workload_patch_sha256": (
-            digest(workload_patch) if workload_patch is not None else None
-        ),
+        "workload_patch_sha256": workload_hash,
+        "workload_patches_sha256": workload_hashes,
         "source_helpers": original,
         "materialized_helpers": {name: digest(destination / name) for name in original},
     }

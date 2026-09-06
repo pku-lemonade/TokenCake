@@ -265,8 +265,10 @@ def prepare(
     parameters = workload_parameters()
     if workload_profile == "continuation":
         parameters["input_composition"] = "same-role-prefix-v1"
-    elif workload_profile == "conversation":
+    elif workload_profile in ("conversation", "conversation-tools"):
         parameters["input_composition"] = "append-only-conversation-v1"
+    if workload_profile == "conversation-tools":
+        parameters["tool_instruction_max_tokens"] = 128
     adapter("freeze", run_root / "launcher", parameters, run_root / "workload.json")
     adapter(
         "freeze",

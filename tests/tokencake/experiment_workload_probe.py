@@ -67,13 +67,14 @@ def main() -> None:
             == {
                 "continuation": "same-role-prefix-v1",
                 "conversation": "append-only-conversation-v1",
+                "conversation-tools": "append-only-conversation-v1",
             }[profile]
         )
         assert len(nodes) == 31
         assert nodes["programmer_2_validate_patch"].mcp_function.excute_time == 8.0
         assert nodes["reviser_2_validate_patch"].mcp_function.excute_time == 10.0
         assert len(app.graph.predecessors(nodes["reviewer_1"].uuid)) == 3
-        if profile == "conversation":
+        if profile in ("conversation", "conversation-tools"):
             reviewer = nodes["reviewer_1"]
             branches = {
                 nodes[f"code_write_{index}"].uuid: LLMTextChunkChain.from_single_text(
@@ -122,17 +123,42 @@ def main() -> None:
         asyncio.run(run())
         assert launcher.APPLICATION_INFO[0]["app_finished"]
         assert len(calls) == 27
-        assert sum(body["max_tokens"] for body in calls.values()) == 11300
+        expected_budget = 6464 if profile == "conversation-tools" else 11300
+        assert sum(body["max_tokens"] for body in calls.values()) == expected_budget
         by_name = {
             name: calls[item["request_id"]]
             for name, item in launcher.IO_RECORD[0].items()
         }
+        if profile == "conversation-tools":
+            assert app.tool_instruction_max_tokens == 128
+            compact = {
+                "search_1",
+                "search_2",
+                "judger_1",
+                "judger_2",
+                "file_write_plan",
+                "code_write_1",
+                "code_write_2",
+                "code_write_3",
+                "revised_code_write_1",
+                "revised_code_write_2",
+                "external_eval",
+                "user_confirm",
+                "test_node",
+            }
+            for name, body in by_name.items():
+                expected = (
+                    128
+                    if name in compact
+                    else (200 if name.startswith(("architect_", "reviewer_")) else 400)
+                )
+                assert body["max_tokens"] == expected, name
         for role, count in (("programmer", 3), ("reviser", 2)):
             for index in range(1, count + 1):
                 previous = by_name[f"{role}_{index}_validate_patch"]["prompt"]
                 resumed = by_name[f"{role}_{index}_repair"]["prompt"]
                 assert resumed.startswith(previous + "\ndef patch():\n    return 42\n")
-        if profile == "conversation":
+        if profile in ("conversation", "conversation-tools"):
             checked = 0
             for node in nodes.values():
                 if not isinstance(node, LLMAppNode):

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from itertools import islice
 from typing import Any, NamedTuple
 
@@ -37,6 +38,7 @@ from vllm.v1.outputs import KVConnectorOutput
 from vllm.v1.request import Request
 
 logger = init_logger(__name__)
+BlockLookup = Callable[[OffloadKey, ReqContext], bool | None]
 
 
 @dataclass(slots=True)
@@ -294,14 +296,19 @@ class OffloadingConnectorScheduler:
                 del self._block_id_to_pending_jobs[bid]
 
     def _maximal_prefix_lookup(
-        self, keys: Iterable[OffloadKey], req_context: ReqContext
+        self,
+        keys: Iterable[OffloadKey],
+        req_context: ReqContext,
+        *,
+        lookup: BlockLookup | None = None,
     ) -> int | None:
         """Return the number of consecutive offloaded blocks from the start,
         or None if the backend deferred a lookup."""
         hit_count = 0
         defer_lookup = False
+        query = self.manager.lookup if lookup is None else lookup
         for key in keys:
-            result = self.manager.lookup(key, req_context)
+            result = query(key, req_context)
             if result is None:
                 defer_lookup = True
                 # continue lookup to allow manager to kick-off async lookups
@@ -317,14 +324,17 @@ class OffloadingConnectorScheduler:
         keys: Sequence[OffloadKey],
         sliding_window_size: int,
         req_context: ReqContext,
+        *,
+        lookup: BlockLookup | None = None,
     ) -> int | None:
         """Return the end index (in `keys`) of the last run of
         `sliding_window_size` consecutive hits, scanning from the end.
         Returns 0 on miss, None if the backend deferred a lookup."""
         defer_lookup = False
         consecutive_hits = 0
+        query = self.manager.lookup if lookup is None else lookup
         for idx in range(len(keys) - 1, -1, -1):
-            result = self.manager.lookup(keys[idx], req_context)
+            result = query(keys[idx], req_context)
             if result is None:
                 defer_lookup = True
                 # continue lookup to allow manager to kick-off async lookups
@@ -357,7 +367,9 @@ class OffloadingConnectorScheduler:
                     req_status.req_context,
                 )
 
-    def _lookup(self, req_status: RequestOffloadState) -> int | None:
+    def _lookup(
+        self, req_status: RequestOffloadState, *, lookup: BlockLookup | None = None
+    ) -> int | None:
         """
         Find how many tokens beyond num_locally_computed_tokens can be loaded.
 
@@ -366,6 +378,11 @@ class OffloadingConnectorScheduler:
         can invalidate an earlier group's result, so the loop re-runs when that
         happens until num_hit_tokens converges.
         """
+        prefix_lookup = self._maximal_prefix_lookup
+        window_lookup = self._sliding_window_lookup
+        if lookup is not None:
+            prefix_lookup = partial(prefix_lookup, lookup=lookup)
+            window_lookup = partial(window_lookup, lookup=lookup)
         num_computed_tokens = req_status.num_locally_computed_tokens
         max_hit_size_tokens: int = req_status.req.num_tokens
         if self._sliding_window_groups:
@@ -414,11 +431,9 @@ class OffloadingConnectorScheduler:
                 # have backend-confirmed hits
                 num_hit_blocks: int | None
                 if sliding_window_size_in_blocks is None:
-                    num_hit_blocks = self._maximal_prefix_lookup(
-                        offload_keys, req_status.req_context
-                    )
+                    num_hit_blocks = prefix_lookup(offload_keys, req_status.req_context)
                 else:
-                    num_hit_blocks = self._sliding_window_lookup(
+                    num_hit_blocks = window_lookup(
                         offload_keys,
                         sliding_window_size_in_blocks,
                         req_status.req_context,

@@ -186,6 +186,15 @@ Its contract is `input_composition="append-only-conversation-v1"`, and its own
 fresh native baseline is required. This profile can have longer downstream
 inputs because it retains tool-call text that older profiles discarded.
 
+`--workload-profile conversation-tools` adds `tool-budget.patch` after the
+conversation patch. It limits the 13 tool-instruction calls per DAG to 128
+output tokens. Planning and review retain 200 tokens; code validation and
+repair retain 400 tokens. The full 24-DAG workload still executes 648 model
+calls, with 155136 total output tokens instead of 271200. Its contract records
+`tool_instruction_max_tokens=128`. Tool durations, graph, arrivals and initial
+repository context are unchanged. Both native and TokenCake use this budget;
+percentage improvements require a new native baseline on this exact profile.
+
 `run` starts a fresh server per case and executes the two independent queues.
 Only affected comparison members receive repeats, including excluded launches
 in the three-launch maximum. Mooncake has one launch per QPS. Both clients and

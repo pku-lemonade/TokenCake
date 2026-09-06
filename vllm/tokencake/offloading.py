@@ -21,6 +21,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.offloading.metrics import (
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.scheduler import (
     OffloadingConnectorScheduler,
+    RequestOffloadState,
     TransferJobStatus,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading_connector import (
@@ -99,6 +100,23 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
     def _defer_store(self, request: Request) -> bool:
         params = request.sampling_params
         return params is not None and "tokencake" in (params.extra_args or {})
+
+    def _peek_ready(self, key: OffloadKey, req_context: ReqContext) -> bool | None:
+        block = self.manager._policy.get(key)
+        if block is None:
+            return False
+        return True if block.is_ready else None
+
+    def estimate_recompute_tokens(self, request: Request) -> int:
+        computed = max(0, request.num_computed_tokens)
+        if not self._defer_store(request) or request.skip_reading_prefix_cache:
+            return computed
+        # Reuse native group alignment without touching live request state,
+        # cache recency, reference counts, or store-frequency tracking.
+        state = RequestOffloadState(config=self.config, req=request)
+        state.update_offload_keys()
+        recoverable = self._lookup(state, lookup=self._peek_ready)
+        return max(0, computed - (recoverable or 0))
 
     def capture_snapshot(
         self, request: Request, block_ids: tuple[list[int], ...]

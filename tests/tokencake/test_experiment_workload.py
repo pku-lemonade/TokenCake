@@ -14,7 +14,9 @@ from tools.tokencake_experiments.campaign import ROOT, SOURCE
 from tools.tokencake_experiments.materialize import git, materialize
 
 
-@pytest.mark.parametrize("profile", ["continuation", "conversation"])
+@pytest.mark.parametrize(
+    "profile", ["continuation", "conversation", "conversation-tools"]
+)
 def test_revised_profile_is_frozen_and_runs_the_complete_dag(tmp_path, profile):
     if not SOURCE.exists():
         pytest.skip("Requires the frozen source checkout")

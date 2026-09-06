@@ -6,7 +6,7 @@ import heapq
 import math
 import time
 from collections import Counter, OrderedDict, defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import TYPE_CHECKING
@@ -946,6 +946,7 @@ class SchedulingController:
         running: list[Request],
         num_new_tokens: int = 1,
         num_lookahead_tokens: int = 0,
+        recompute_cost: Callable[[Request], int] | None = None,
     ) -> Request | None:
         if (
             self._reclaim_reservation
@@ -999,7 +1000,9 @@ class SchedulingController:
                 candidates = positive
 
         def cost(r: Request) -> tuple:
-            computed = r.num_computed_tokens
+            computed = (
+                r.num_computed_tokens if recompute_cost is None else recompute_cost(r)
+            )
             near_finish = r.num_output_tokens >= 0.9 * r.max_tokens
             return (
                 near_finish,

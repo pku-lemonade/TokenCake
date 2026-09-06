@@ -3,10 +3,12 @@
 
 import copy
 import weakref
+from collections import OrderedDict
 from uuid import uuid4
 
 import pytest
 
+from tests.tokencake.test_scheduling import decode
 from tests.v1.core.utils import create_requests, create_scheduler
 from tests.v1.kv_connector.unit.offloading_connector.utils import MockOffloadingHandler
 from vllm.config import KVTransferConfig
@@ -17,6 +19,9 @@ from vllm.distributed.kv_transfer.kv_connector.v1.offloading.common import (
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.metrics import (
     OffloadingConnectorStats,
+)
+from vllm.distributed.kv_transfer.kv_connector.v1.offloading.scheduler import (
+    RequestOffloadState,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.offloading.worker import (
     OffloadingConnectorWorker,
@@ -454,6 +459,135 @@ def test_completed_prefix_can_be_saved_while_a_peer_still_uses_it(groups, factor
     assert peer in scheduler.running
     resumed = request_for("resumed", tokens=144)
     assert offload.get_num_new_matched_tokens(resumed, 0) == (128, True)
+
+
+@pytest.mark.parametrize("groups,factor", [(1, 1), (1, 2), (2, 1), ("hybrid", 1)])
+@pytest.mark.parametrize("cache_policy", ["lru", "arc"])
+@pytest.mark.parametrize("condition", ["ready", "gap", "storing", "loading", "skip"])
+def test_recompute_estimate_respects_native_groups_without_mutation(
+    groups, factor, cache_policy, condition
+):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=129, groups=groups, factor=factor, cache_policy=cache_policy
+    )
+    request = request_for("computed", tokens=192)
+    scheduler.add_request(request)
+    scheduler.schedule()
+    offload = scheduler.connector.tokencake_scheduler
+    manager = offload.manager
+    state = RequestOffloadState(config=offload.config, req=request)
+    state.update_offload_keys()
+    keys = [
+        key
+        for group, config in zip(state.group_states, state.config.kv_group_configs)
+        for key in group.offload_keys[: 128 // config.offloaded_block_size]
+    ]
+    stored = manager.prepare_store(keys, state.req_context)
+    assert stored is not None
+    manager.complete_store(stored.keys_to_store, state.req_context)
+    expected = 64
+    if condition == "gap":
+        # A hole in the full-attention prefix limits even a ready sliding window.
+        manager._policy.remove(state.group_states[0].offload_keys[0])
+        expected = 192
+    elif condition == "storing":
+        manager._policy.get(keys[0]).ref_cnt = -1
+        expected = 192
+    elif condition == "loading":
+        offload._blocks_being_loaded.add(keys[0])
+        expected = 192
+    elif condition == "skip":
+        request.skip_reading_prefix_cache = True
+        expected = 192
+    manager.counts = OrderedDict()
+    policy_order = {
+        name: tuple(getattr(manager._policy, name, {}))
+        for name in ("blocks", "t1", "t2", "b1", "b2")
+    }
+    block_refs = {
+        key: block.ref_cnt
+        for key in keys
+        if (block := manager._policy.get(key)) is not None
+    }
+    live = offload._req_status[request.request_id]
+    group_state = copy.deepcopy(live.group_states)
+    local_tokens = live.num_locally_computed_tokens
+    assert offload.estimate_recompute_tokens(request) == expected
+    assert live.group_states == group_state
+    assert live.num_locally_computed_tokens == local_tokens
+    assert not manager.counts
+    for name, order in policy_order.items():
+        assert tuple(getattr(manager._policy, name, {})) == order
+    assert all(
+        manager._policy.get(key).ref_cnt == count for key, count in block_refs.items()
+    )
+
+
+@pytest.mark.parametrize(
+    "groups,factor,gpu_blocks", [(1, 1, 21), (1, 2, 21), (2, 1, 31)]
+)
+def test_cpu_backed_victim_resumes_and_finishes(groups, factor, gpu_blocks):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=gpu_blocks,
+        groups=groups,
+        factor=factor,
+        scheduling=True,
+        generation_reserve_mode="all",
+    )
+    offload = scheduler.connector.tokencake_scheduler
+    beneficiary = request_for("beneficiary", tokens=48, value=2)
+    warm = request_for("warm", tokens=160)
+    cold = request_for("cold", tokens=128, value=1)
+    for request, allocated, importance in (
+        (beneficiary, 16, 50.0),
+        (warm, 160, 1.0),
+        (cold, 128, 2.0),
+    ):
+        request.max_tokens = 128
+        request.sampling_params.extra_args["tokencake"]["importance"] = importance
+        scheduler.add_request(request)
+        offload.get_num_new_matched_tokens(request, 0)
+        scheduler.waiting.remove_request(request)
+        scheduler.running.append(request)
+        request.status = RequestStatus.RUNNING
+        assert scheduler.kv_cache_manager.allocate_slots(request, allocated) is not None
+        request.num_computed_tokens = allocated
+    snapshot = offload.capture_snapshot(
+        warm, scheduler.kv_cache_manager.get_blocks(warm.request_id).get_block_ids()
+    )
+    keys = [
+        key
+        for group, config in zip(snapshot.groups, offload.config.kv_group_configs)
+        for key in group.keys[: 128 // config.offloaded_block_size]
+    ]
+    stored = offload.manager.prepare_store(keys, snapshot.req_context)
+    assert stored is not None
+    offload.manager.complete_store(stored.keys_to_store, snapshot.req_context)
+    pressure = scheduler.schedule()
+    assert warm.num_preemptions == 1 and cold.num_preemptions == 0
+    assert warm.status == RequestStatus.PREEMPTED
+    assert beneficiary.request_id in pressure.num_scheduled_tokens
+    scheduler.finish_requests(
+        [beneficiary.request_id, cold.request_id], RequestStatus.FINISHED_STOPPED
+    )
+    assert scheduler.reset_prefix_cache(reset_connector=False)
+    loading = scheduler.schedule()
+    jobs = loading.kv_connector_metadata.load_jobs
+    assert jobs and warm.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+    scheduler._update_from_kv_xfer_finished(
+        KVConnectorOutput(
+            finished_recving={warm.request_id},
+            kv_connector_worker_meta=OffloadingWorkerMetadata({key: 1 for key in jobs}),
+        )
+    )
+    for _ in range(130):
+        if warm.is_finished():
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert warm.is_finished() and warm.num_output_tokens == 128
+    metrics = offload.lifecycles.metrics.snapshot(0)
+    assert metrics["scheduling.resume_cpu_hit_tokens"] == 128
+    assert metrics["scheduling.reservation_preempted"] == 0
 
 
 @pytest.mark.parametrize("constraint,expected", [("cpu", 8), ("duration", 10)])

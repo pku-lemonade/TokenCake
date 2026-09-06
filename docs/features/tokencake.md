@@ -71,6 +71,12 @@ After checking normal reservation eligibility in agent-score order, the schedule
 can lend otherwise idle reservations to a waiting request that fits the remaining
 physical and committed capacity. It still checks full demand before admitting a
 borrower. A preempted generation remains pending and resumes to completion.
+Within a similar-importance victim band, selection prefers enough releasable
+capacity at a lower recomputation cost and protects requests near completion.
+When CPU offloading is enabled, this cost excludes the currently restorable
+prefix, using native cache-group alignment. The estimate is read-only and grants
+no credit for pending transfers. CPU cache eviction before readmission can still
+require native recomputation; the request remains pending until it completes.
 During normal admission, a request may also borrow an idle reservation when its
 effective score exceeds every waiting owner it borrows from by at least
 `scheduling.priority_borrow_score_margin` (500 points by default). This prevents

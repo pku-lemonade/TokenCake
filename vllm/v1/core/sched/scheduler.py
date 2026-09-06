@@ -537,6 +537,11 @@ class Scheduler(SchedulerInterface):
                             self.running,
                             num_new_tokens,
                             self.num_lookahead_tokens,
+                            recompute_cost=(
+                                self._tokencake_connector.tokencake_scheduler.estimate_recompute_tokens
+                                if self._tokencake_connector is not None
+                                else None
+                            ),
                         )
                         if tokencake is not None
                         else None

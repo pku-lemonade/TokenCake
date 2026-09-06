@@ -776,6 +776,19 @@ class Scheduler(SchedulerInterface):
 
                     # Get externally-cached tokens if using a KVConnector.
                     if self.connector is not None:
+                        if (
+                            tokencake is not None
+                            and self._tokencake_connector is not None
+                            and tokencake.defer_cache_lookup(
+                                request,
+                                num_new_local_computed_tokens,
+                                new_computed_blocks,
+                            )
+                        ):
+                            tokencake.defer(request)
+                            request_queue.remove_request(request)
+                            step_skipped_waiting.prepend_request(request)
+                            continue
                         ext_tokens, load_kv_async = (
                             self.connector.get_num_new_matched_tokens(
                                 request, num_new_local_computed_tokens

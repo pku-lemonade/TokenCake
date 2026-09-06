@@ -77,6 +77,10 @@ When CPU offloading is enabled, this cost excludes the currently restorable
 prefix, using native cache-group alignment. The estimate is read-only and grants
 no credit for pending transfers. CPU cache eviction before readmission can still
 require native recomputation; the request remains pending until it completes.
+For full attention without lookahead or encoder inputs, requests first check
+committed capacity using native multi-group demand and GPU prefix hits. A
+request that cannot fit waits before querying or touching the CPU cache. Once
+capacity becomes available, native lookup and asynchronous restoration proceed.
 During normal admission, a request may also borrow an idle reservation when its
 effective score exceeds every waiting owner it borrows from by at least
 `scheduling.priority_borrow_score_margin` (500 points by default). This prevents

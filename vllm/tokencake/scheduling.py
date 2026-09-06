@@ -155,13 +155,12 @@ class SchedulingController:
         self.num_lookahead_tokens = (
             num_lookahead_tokens if settings.reserve_generation_tokens else 0
         )
+        self._cache_capacity_precheck = not num_lookahead_tokens and all(
+            type(group.kv_cache_spec) is FullAttentionSpec
+            for group in manager.kv_cache_config.kv_cache_groups
+        )
         selective_generation = (
-            settings.reserve_generation_tokens
-            and not num_lookahead_tokens
-            and all(
-                type(group.kv_cache_spec) is FullAttentionSpec
-                for group in manager.kv_cache_config.kv_cache_groups
-            )
+            settings.reserve_generation_tokens and self._cache_capacity_precheck
         )
         self._progress_reservation = (
             selective_generation and settings.generation_reserve_mode == "progress"
@@ -572,6 +571,27 @@ class SchedulingController:
             if remaining == 0:
                 return usage
         return usage if remaining == 0 else None
+
+    def defer_cache_lookup(
+        self, request: Request, computed: int, blocks: KVCacheBlocks
+    ) -> bool:
+        if (
+            not self._cache_capacity_precheck
+            or request.request_id not in self.metadata
+            or request.request_id in self._admitted
+            or request.has_encoder_inputs
+        ):
+            return False
+        # Full attention needs the same GPU capacity whether an external
+        # prefix is computed or restored. Shared GPU hits still reduce demand.
+        if self.admission_demand(request, computed, blocks) <= self.uncommitted_blocks:
+            return False
+        self.metrics.count(
+            Metric.GENERATION_CAPACITY_DENIED
+            if self.settings.reserve_generation_tokens
+            else Metric.PREFILL_CAPACITY_DENIED
+        )
+        return True
 
     def can_allocate(
         self,

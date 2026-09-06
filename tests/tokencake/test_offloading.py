@@ -523,6 +523,99 @@ def test_recompute_estimate_respects_native_groups_without_mutation(
     )
 
 
+@pytest.mark.parametrize("groups,gpu_blocks", [(1, 21), (2, 31), ("hybrid", 25)])
+@pytest.mark.parametrize("mode", ["all", "reclaim", "progress"])
+def test_capacity_rejection_skips_cpu_lookup_until_capacity_frees(
+    monkeypatch, groups, gpu_blocks, mode
+):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=gpu_blocks,
+        groups=groups,
+        scheduling=True,
+        generation_reserve_mode=mode,
+    )
+    runner = request_for("runner", tokens=128)
+    runner.max_tokens = 16
+    scheduler.add_request(runner)
+    decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    waiting = request_for("waiting", tokens=256, value=1)
+    waiting.max_tokens = 16
+    offload = scheduler.connector.tokencake_scheduler
+    state = RequestOffloadState(config=offload.config, req=waiting)
+    state.update_offload_keys()
+    keys = [
+        key
+        for group, config in zip(state.group_states, state.config.kv_group_configs)
+        for key in group.offload_keys[: 192 // config.offloaded_block_size]
+    ]
+    stored = offload.manager.prepare_store(keys, state.req_context)
+    assert stored is not None
+    offload.manager.complete_store(stored.keys_to_store, state.req_context)
+    scheduler.add_request(waiting)
+    queried = []
+    native_query = scheduler.connector.get_num_new_matched_tokens
+
+    def query(request, num_computed_tokens):
+        queried.append(request.request_id)
+        return native_query(request, num_computed_tokens)
+
+    monkeypatch.setattr(scheduler.connector, "get_num_new_matched_tokens", query)
+    for _ in range(3):
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    if groups == "hybrid":
+        assert queried == [waiting.request_id] * 3
+    else:
+        assert not queried
+    assert waiting.status == RequestStatus.WAITING
+    queried.clear()
+    scheduler.finish_requests(runner.request_id, RequestStatus.FINISHED_STOPPED)
+    output = scheduler.schedule()
+    jobs = output.kv_connector_metadata.load_jobs
+    assert queried == [waiting.request_id] and jobs
+    assert waiting.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+    scheduler._update_from_kv_xfer_finished(
+        KVConnectorOutput(
+            finished_recving={waiting.request_id},
+            kv_connector_worker_meta=OffloadingWorkerMetadata({key: 1 for key in jobs}),
+        )
+    )
+    for _ in range(18):
+        if waiting.is_finished():
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert waiting.is_finished() and waiting.num_output_tokens == 16
+    metrics = offload.lifecycles.metrics.snapshot(0)
+    assert metrics["scheduling.cpu_hit_tokens"] == 192
+    assert metrics["scheduling.generation_capacity_denied"] >= 3
+    assert metrics["scheduling.physical_preempted"] == 0
+
+
+@pytest.mark.parametrize("groups,gpu_blocks", [(1, 21), (2, 31)])
+def test_capacity_probe_counts_shared_gpu_prefixes(monkeypatch, groups, gpu_blocks):
+    scheduler = make_offload_scheduler(
+        gpu_blocks=gpu_blocks, groups=groups, scheduling=True
+    )
+    runner = request_for("runner", tokens=128)
+    runner.max_tokens = 16
+    scheduler.add_request(runner)
+    decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    following = request_for("following", tokens=256)
+    following.max_tokens = 16
+    scheduler.add_request(following)
+    queried = []
+    native_query = scheduler.connector.get_num_new_matched_tokens
+
+    def query(request, num_computed_tokens):
+        queried.append((request.request_id, num_computed_tokens))
+        return native_query(request, num_computed_tokens)
+
+    monkeypatch.setattr(scheduler.connector, "get_num_new_matched_tokens", query)
+    output = scheduler.schedule()
+    assert queried == [(following.request_id, 128)]
+    assert output.num_scheduled_tokens[following.request_id] == 128
+    assert runner in scheduler.running and following in scheduler.running
+
+
 @pytest.mark.parametrize(
     "groups,factor,gpu_blocks", [(1, 1, 21), (1, 2, 21), (2, 1, 31)]
 )

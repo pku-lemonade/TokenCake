@@ -37,10 +37,13 @@ class Identity:
 
     @property
     def key(self) -> str:
-        return content_hash(asdict(self))
+        return self.payload()["key"]
 
     def payload(self) -> dict:
-        return asdict(self) | {"key": self.key}
+        fields = asdict(self)
+        if self.case.gpu_index is None:
+            fields["case"].pop("gpu_index")
+        return fields | {"key": content_hash(fields)}
 
 
 def measurements(identity: Identity, results: list[dict]) -> list[dict]:
@@ -114,14 +117,26 @@ def compare(
     *,
     previously_triggered: set[str] | None = None,
     reference_equivalence: dict[str, str] | None = None,
+    native_improvement: float = 0.10,
 ) -> dict:
+    if not 0 < native_improvement < 1:
+        raise ValueError("Native improvement must be between zero and one")
     if target.case.mode != "offload-agent" or reference.case.mode not in BOUNDARIES:
         raise ValueError("Only the three specified offload-agent comparisons are gates")
     if target.case.qps != reference.case.qps:
         raise ValueError("Cannot compare different QPS points")
     if target.workload_sha256 != reference.workload_sha256:
         raise ValueError("Comparison members have different frozen inputs")
-    gate_id = content_hash([target.key, reference.key])
+    boundary = (
+        1 - native_improvement
+        if reference.case.mode == "native"
+        else BOUNDARIES[reference.case.mode]
+    )
+    gate_id = content_hash(
+        [target.key, reference.key]
+        if boundary == BOUNDARIES[reference.case.mode]
+        else [target.key, reference.key, boundary]
+    )
     left = measurements(target, results)
     right = measurements(reference, results)
     output: dict[str, Any] = {
@@ -131,7 +146,7 @@ def compare(
         "reference_mode": reference.case.mode,
         "target_identity": target.key,
         "reference_identity": reference.key,
-        "maximum_ratio": BOUNDARIES[reference.case.mode],
+        "maximum_ratio": boundary,
         "status": "unresolved",
         "reason": "missing_qualifying_result",
         "repeat_triggered": gate_id in (previously_triggered or set()),
@@ -214,6 +229,7 @@ def evaluate(
     include_old: bool = True,
     previously_triggered: set[str] | None = None,
     reference_equivalence: dict[str, str] | None = None,
+    native_improvement: float = 0.10,
 ) -> dict:
     lookup = {
         (identity.case.mode, identity.case.qps): identity for identity in identities
@@ -223,18 +239,34 @@ def evaluate(
             "A report must select one implementation identity per mode/QPS"
         )
     gates = []
+    unprepared = []
     requested: dict[str, int] = {}
     for qps in QPS:
-        target = lookup["offload-agent", qps]
+        target = lookup.get(("offload-agent", qps))
         for mode in BOUNDARIES:
             if mode == "old-offload-agent" and not include_old:
                 continue
+            reference = lookup.get((mode, qps))
+            if target is None or reference is None:
+                unprepared.append(
+                    {
+                        "qps": qps,
+                        "reference_mode": mode,
+                        "missing_modes": [
+                            name
+                            for name in ("offload-agent", mode)
+                            if (name, qps) not in lookup
+                        ],
+                    }
+                )
+                continue
             gate = compare(
                 target,
-                lookup[mode, qps],
+                reference,
                 results,
                 previously_triggered=previously_triggered,
                 reference_equivalence=reference_equivalence,
+                native_improvement=native_improvement,
             )
             gates.append(gate)
             for key, count in gate["requested_launches"].items():
@@ -266,15 +298,19 @@ def evaluate(
         "triggered_gates": sorted(g["gate_id"] for g in gates if g["repeat_triggered"]),
         "requested_launches": requested,
         "mooncake_speed_reference": references,
-        "passed": all(g["status"] == "pass" for g in gates),
-        "applicable_gates_passed": all(
-            g["status"] in ("pass", "work_inequivalent_reference") for g in gates
-        ),
+        "unprepared_comparisons": unprepared,
+        "passed": not unprepared and all(g["status"] == "pass" for g in gates),
+        "applicable_gates_passed": not unprepared
+        and all(g["status"] in ("pass", "work_inequivalent_reference") for g in gates),
         "unresolved_decisions": [
             {"gate_id": g["gate_id"], "reason": g["reason"]}
             for g in gates
             if g["status"] == "work_inequivalent_reference"
             or g["status"] == "unresolved"
             and not g["requested_launches"]
+        ]
+        + [
+            {"reason": "unprepared_comparison", **comparison}
+            for comparison in unprepared
         ],
     }

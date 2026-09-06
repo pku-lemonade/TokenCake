@@ -1,3 +1,5 @@
+# TokenCake Integration Proposal
+
 ## Why
 
 TokenCake's latest agent-aware scheduling and selective KV-cache preservation improve multi-agent DAG makespan, but the implementation in `../vllm_agent` forks older vLLM internals and duplicates CPU-offload machinery. The useful behavior needs to be migrated onto vLLM v0.22.0 with a small, upstream-oriented change that preserves native behavior when disabled and reuses the native CPU-offload connector.
@@ -10,7 +12,9 @@ TokenCake's latest agent-aware scheduling and selective KV-cache preservation im
 - Keep TokenCake implementation code under `vllm/tokencake/` and add only direct, narrow integration logic to the v0.22 scheduler, OpenAI protocol, EngineCore utility path, connector factory, reset, and metrics surfaces.
 - Do not migrate the old custom CPU block pool, swap-map output fields, model-runner transfer path, predictive H2D/upload reservations, MCP-specific EngineCore request types, debug endpoints, or request-terminating preemption behavior.
 - Adapt the latest old benchmark launcher through a small, target-owned patch applied to a disposable checkout; keep the old source checkout unchanged for historical comparisons.
-- Validate native baseline, target agent-only, target offload-agent, latest-old offload-agent, and current Mooncake behavior with the agreed A800 end-to-end matrix and hard performance gates.
+- Validate native baseline, target agent-only, target offload-agent, latest-old offload-agent, and current Mooncake behavior with the agreed A800 end-to-end matrix. The revised primary gate requires offload-agent total E2E to improve on native vLLM by at least 25% at every QPS.
+- Adapt reservation, aggregate prefill admission, chunking, and victim selection to requests that must resume after preemption. Complete the combined optimization first; defer single-factor ablations until afterward, as confirmed on 2026-09-06.
+- Extend logical admission to declared generation budgets and correct preservation-window demand accounting, validating each combined stage with complete DAG execution. The user authorized autonomous strategy iteration and a code commit after each validated stage on 2026-09-06.
 - Observe the global imminent-eviction frontier without using it for Phase-1 selection; if Phase 1 misses a performance gate and metrics attribute the miss to delayed preservation of snapshot-known blocks, allow the conditional second-stage frontier/snapshot-intersection hook without replacing native offload or rebuilding the old global lineage graph.
 
 ## Capabilities

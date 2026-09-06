@@ -45,7 +45,10 @@ def waiting_pressure(
 ) -> Pressure:
     manager = scheduler.kv_cache_manager
     controller = scheduler._tokencake_scheduling
+    if controller is not None and not controller.metadata:
+        controller = None
     free = manager.block_pool.get_num_free_blocks()
+    uncommitted = controller.uncommitted_blocks if controller is not None else free
     shared = controller.shared_available if controller is not None else free
     critical = controller.plan.critical if controller is not None else set()
     if scheduler.policy == SchedulingPolicy.FCFS:
@@ -91,15 +94,6 @@ def waiting_pressure(
         if not scheduler.scheduler_config.enable_chunked_prefill and tokens > budget:
             continue
         tokens = min(tokens, budget, scheduler.max_model_len - computed)
-        if controller is not None:
-            tokens = controller.prefill_limit(
-                request,
-                tokens,
-                bool(waiting),
-                len(scheduler.running),
-                scheduler.max_num_running_reqs,
-                record_metric=False,
-            )
         if tokens <= 0:
             continue
         encoder_tokens = 0
@@ -137,25 +131,31 @@ def waiting_pressure(
             total_computed_tokens=computed,
             num_tokens_main_model=computed + tokens,
         )
-        if scheduler.scheduler_reserve_full_isl:
-            full_tokens = min(request.num_tokens, scheduler.max_model_len)
+        admission = demand
+        if scheduler.scheduler_reserve_full_isl or controller is not None:
+            full_tokens = (
+                controller.admission_tokens(request)
+                if controller is not None
+                else min(request.num_tokens, scheduler.max_model_len)
+            )
+            full_lookahead = (
+                controller.num_lookahead_tokens if controller is not None else 0
+            )
             full_demand = manager.coordinator.get_num_blocks_to_allocate(
                 request_id=request.request_id,
-                num_tokens=full_tokens,
+                num_tokens=min(full_tokens + full_lookahead, scheduler.max_model_len),
                 new_computed_blocks=blocks,
                 num_encoder_tokens=encoder_tokens,
                 total_computed_tokens=computed,
                 num_tokens_main_model=full_tokens,
                 apply_admission_cap=True,
             )
-            if full_demand > free:
-                continue
-        if demand <= 0 or demand > free:
+            admission = max(admission, full_demand)
+        if demand <= 0 or demand > free or admission > uncommitted:
             continue
         if (
             controller is not None
-            and controller.metadata
-            and controller._consumption(request, demand) is None
+            and controller._consumption(request, admission) is None
         ):
             continue
         score = (
@@ -163,7 +163,7 @@ def waiting_pressure(
             if controller is not None
             else -request.priority
         )
-        candidates.append((request, demand, tokens, score))
+        candidates.append((request, demand, tokens, score, admission))
     if temporal_selection == "priority_first":
         candidates.sort(key=lambda c: (c[3], c[1], -c[0].arrival_time), reverse=True)
     elif temporal_selection == "best_fit":
@@ -171,21 +171,33 @@ def waiting_pressure(
             key=lambda c: (-abs(window - c[1]), c[3], -c[0].arrival_time), reverse=True
         )
     slots = scheduler.max_num_running_reqs - len(scheduler.running)
-    remaining_blocks = min(window, free)
+    remaining_blocks = free
+    remaining_commitment = uncommitted
     remaining_tokens = scheduler.max_num_scheduled_tokens
     fit = 0
     if scheduler.pause_state == PauseState.UNPAUSED:
-        for _, demand, tokens, _ in candidates:
+        for _, demand, tokens, _, admission in candidates:
             if slots <= 0:
                 break
-            if demand > remaining_blocks or tokens > remaining_tokens:
+            if (
+                demand > remaining_blocks
+                or admission > remaining_commitment
+                or tokens > remaining_tokens
+            ):
                 continue
             slots -= 1
             remaining_blocks -= demand
+            remaining_commitment -= admission
             remaining_tokens -= tokens
             fit += demand
     return Pressure(
-        manager.usage, free, len(waiting), waiting_demand, critical_demand, shared, fit
+        manager.usage,
+        free,
+        len(waiting),
+        waiting_demand,
+        critical_demand,
+        shared,
+        min(window, fit),
     )
 
 

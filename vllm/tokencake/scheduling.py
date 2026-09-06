@@ -9,6 +9,7 @@ from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain
+from typing import TYPE_CHECKING
 
 from vllm.tokencake.config import SchedulingConfig
 from vllm.tokencake.metrics import Metric, TokenCakeMetrics
@@ -17,9 +18,13 @@ from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
 from vllm.v1.core.sched.request_queue import RequestQueue, SchedulingPolicy
 from vllm.v1.request import Request
 
+if TYPE_CHECKING:
+    from vllm.v1.core.sched.output import SchedulerOutput
+    from vllm.v1.outputs import ModelRunnerOutput
+
 _ADJUSTMENT_WINDOW = 500
 _HISTORY_LIMIT = 4096
-_PREEMPTION_MARGIN = 3000
+_PREEMPTION_SCORE_BAND = 3000
 
 
 def request_score(metadata: TokenCakeMetadata, arrival_time: float, now: float) -> int:
@@ -141,10 +146,14 @@ class SchedulingController:
         settings: SchedulingConfig,
         manager: KVCacheManager,
         metrics: TokenCakeMetrics,
+        num_lookahead_tokens: int = 0,
     ) -> None:
         self.settings = settings
         self.manager = manager
         self.metrics = metrics
+        self.num_lookahead_tokens = (
+            num_lookahead_tokens if settings.reserve_generation_tokens else 0
+        )
         self.metadata: dict[str, TokenCakeMetadata] = {}
         self.scores: dict[str, int] = {}
         self.history: OrderedDict[str, AgentHistory] = OrderedDict()
@@ -152,6 +161,7 @@ class SchedulingController:
         # One charge per occupied physical block, including shared prefix hits.
         # Values name the reservation owner, or None for shared capacity.
         self.charges: dict[int, str | None] = {}
+        self._used: Counter[str | None] = Counter()
         self.plan = CapacityPlan()
         self.reserve_ratio = settings.reserve_ratio_min
         self.step = 0
@@ -159,9 +169,16 @@ class SchedulingController:
         self.shared_available = 0
         self.reserved_available: dict[str, int] = {}
         self._accounting_active = False
+        self._executed_ranges: dict[str, list[tuple[int, int]]] = {}
+        self._admitted: dict[str, int] = {}
+        self._growth_commitments: dict[str, int] = {}
+        self._retry_capacity: dict[str, tuple[int, int]] = {}
+        self._queued_at: dict[str, float] = {}
+        self._completion_epoch = 0
 
     def associate(self, request_id: str, metadata: TokenCakeMetadata) -> None:
         self.metadata[request_id] = metadata
+        self._queued_at[request_id] = time.monotonic()
 
     def _history(self, key: str) -> AgentHistory:
         history = self.history.setdefault(key, AgentHistory())
@@ -173,12 +190,23 @@ class SchedulingController:
     def begin_step(self, waiting: Iterable[Request], running: list[Request]) -> bool:
         if not self.metadata:
             self.charges.clear()
+            self._used.clear()
             self.scores.clear()
+            self._admitted.clear()
+            self._growth_commitments.clear()
+            self._retry_capacity.clear()
             self._accounting_active = False
             return False
         now = time.time()
         waiting = list(waiting)
         requests = [*waiting, *running]
+        for request in running:
+            self._admitted.setdefault(request.request_id, 0)
+        self._growth_commitments = {
+            r.request_id: self._remaining_growth(r)
+            for r in requests
+            if r.request_id in self._admitted
+        }
         self.scores = {
             r.request_id: request_score(
                 self.metadata[r.request_id], r.arrival_time, now
@@ -247,6 +275,36 @@ class SchedulingController:
             if not block.is_null
         }
 
+    def admission_tokens(self, request: Request) -> int:
+        full_tokens = request.num_tokens
+        if self.settings.reserve_generation_tokens:
+            full_tokens = max(
+                full_tokens, request.num_prompt_tokens + request.max_tokens
+            )
+        return min(full_tokens, self.manager.max_model_len)
+
+    @property
+    def uncommitted_blocks(self) -> int:
+        return self.manager.block_pool.get_num_free_blocks() - sum(
+            self._growth_commitments.values()
+        )
+
+    def _remaining_growth(self, request: Request) -> int:
+        full_tokens = self.admission_tokens(request)
+        if request.num_computed_tokens >= full_tokens:
+            return 0
+        return self.manager.coordinator.get_num_blocks_to_allocate(
+            request_id=request.request_id,
+            num_tokens=min(
+                full_tokens + self.num_lookahead_tokens, self.manager.max_model_len
+            ),
+            new_computed_blocks=self.manager.empty_kv_cache_blocks.blocks,
+            num_encoder_tokens=self._admitted.get(request.request_id, 0),
+            total_computed_tokens=request.num_computed_tokens,
+            num_tokens_main_model=full_tokens,
+            apply_admission_cap=True,
+        )
+
     def release(self) -> None:
         if not self._accounting_active:
             return
@@ -256,7 +314,11 @@ class SchedulingController:
             for block_id, owner in self.charges.items()
             if pool.blocks[block_id].ref_cnt > 0
         }
-        used = Counter(self.charges.values())
+        self._used = Counter(self.charges.values())
+        self._update_available()
+
+    def _update_available(self) -> None:
+        used = self._used
         self.shared_available = max(0, self.plan.shared - used[None])
         self.reserved_available = {
             key: max(0, count - used[key]) for key, count in self.plan.reserved.items()
@@ -265,7 +327,7 @@ class SchedulingController:
             0,
             self.shared_available
             + sum(self.reserved_available.values())
-            - pool.get_num_free_blocks(),
+            - max(0, self.uncommitted_blocks),
         )
         reduction = min(excess, self.shared_available)
         self.shared_available -= reduction
@@ -274,6 +336,14 @@ class SchedulingController:
             reduction = min(excess, self.reserved_available[key])
             self.reserved_available[key] -= reduction
             excess -= reduction
+
+    def prepare_running(self, request: Request) -> None:
+        free = self.manager.block_pool.get_num_free_blocks()
+        self.manager.remove_skipped_blocks(
+            request.request_id, request.num_computed_tokens
+        )
+        if free != self.manager.block_pool.get_num_free_blocks():
+            self.release()
 
     def _consumption(
         self, request: Request, demand: int
@@ -319,6 +389,10 @@ class SchedulingController:
         num_external_computed_tokens: int = 0,
         num_encoder_tokens: int = 0,
     ) -> bool:
+        # An asynchronous cache load is already admitted and must be allowed
+        # to finish admission using the capacity committed before the load.
+        if request.request_id in self._admitted:
+            return True
         computed = (
             request.num_computed_tokens
             + num_new_computed_tokens
@@ -341,27 +415,96 @@ class SchedulingController:
             total_computed_tokens=computed,
             num_tokens_main_model=main_tokens,
         )
-        # Physical exhaustion must reach native allocation/preemption. Protect
-        # the capacity presently available; recheck after each native victim.
-        available_demand = min(demand, self.manager.block_pool.get_num_free_blocks())
-        return self._consumption(request, available_demand) is not None
+        full_tokens = self.admission_tokens(request)
+        full_demand = self.manager.coordinator.get_num_blocks_to_allocate(
+            request_id=request.request_id,
+            num_tokens=min(
+                full_tokens + self.num_lookahead_tokens, self.manager.max_model_len
+            ),
+            new_computed_blocks=(
+                new_computed_blocks or self.manager.empty_kv_cache_blocks
+            ).blocks,
+            num_encoder_tokens=num_encoder_tokens,
+            total_computed_tokens=computed,
+            num_tokens_main_model=full_tokens,
+            apply_admission_cap=True,
+        )
+        demand = max(demand, full_demand)
+        available = self.uncommitted_blocks
+        if demand > available:
+            self.metrics.count(
+                Metric.GENERATION_CAPACITY_DENIED
+                if self.settings.reserve_generation_tokens
+                else Metric.PREFILL_CAPACITY_DENIED
+            )
+            return False
+        retry = self._retry_capacity.get(request.request_id)
+        if (
+            retry is not None
+            and self._admitted
+            and retry[1] == self._completion_epoch
+            and available <= retry[0]
+        ):
+            self.metrics.count(Metric.RESUME_DEFERRED)
+            return False
+        allowed = self._consumption(request, demand) is not None
+        if not allowed:
+            self.metrics.count(Metric.RESERVATION_DENIED)
+        return allowed
 
-    def commit(self, request: Request) -> None:
-        block_ids = sorted(self._block_ids(request) - self.charges.keys())
+    def commit(
+        self,
+        request: Request,
+        *,
+        running: bool = False,
+        num_encoder_tokens: int = 0,
+        new_blocks: KVCacheBlocks | None = None,
+    ) -> None:
+        block_ids = sorted(
+            (
+                {
+                    b.block_id
+                    for group in new_blocks.blocks
+                    for b in group
+                    if not b.is_null
+                }
+                if running and new_blocks is not None
+                else self._block_ids(request)
+            )
+            - self.charges.keys()
+        )
         usage = self._consumption(request, len(block_ids))
+        if usage is None and (running or request.request_id in self._admitted):
+            # Accepted work may grow past a revised partition. Charge that debt
+            # to shared capacity; later admissions pay it down as blocks free.
+            usage = [(None, len(block_ids))]
         assert usage is not None, "Native allocation exceeded admitted capacity"
         offset = 0
         for owner, count in usage:
             for block_id in block_ids[offset : offset + count]:
                 self.charges[block_id] = owner
+            self._used[owner] += count
             offset += count
             if owner is None:
-                self.shared_available -= count
+                self.shared_available = max(0, self.shared_available - count)
             else:
                 self.reserved_available[owner] -= count
+        self._admitted[request.request_id] = max(
+            self._admitted.get(request.request_id, 0), num_encoder_tokens
+        )
+        self._growth_commitments[request.request_id] = self._remaining_growth(request)
+        self._retry_capacity.pop(request.request_id, None)
+        self._update_available()
         metadata = self.metadata.get(request.request_id)
         if metadata is None:
             return
+        queued_at = self._queued_at.pop(request.request_id, None)
+        if queued_at is not None:
+            self.metrics.admission_wait(
+                max(0, time.monotonic() - queued_at),
+                critical=metadata.critical_path
+                or metadata.agent_type in self.plan.critical,
+            )
         if metadata.agent_type:
             history = self._history(metadata.agent_type)
             history.deferrals = max(0, history.deferrals - 1)
@@ -382,14 +525,31 @@ class SchedulingController:
         if metadata is not None and metadata.agent_type:
             self._history(metadata.agent_type).deferrals += 1
 
-    def preempt(self, request: Request) -> None:
+    def preempt(self, request: Request, *, physical: bool = False) -> None:
+        self._admitted.pop(request.request_id, None)
+        self._growth_commitments.pop(request.request_id, None)
         self.release()
         self.metrics.count(Metric.PREEMPTED)
+        if physical:
+            self.metrics.count(Metric.PHYSICAL_PREEMPTED)
+            self._retry_capacity[request.request_id] = (
+                self.uncommitted_blocks,
+                self._completion_epoch,
+            )
+        self._queued_at[request.request_id] = time.monotonic()
         metadata = self.metadata.get(request.request_id)
         if metadata is not None and metadata.agent_type:
             self._history(metadata.agent_type).preemptions += 1
 
     def finish(self, request: Request) -> None:
+        was_admitted = request.request_id in self._admitted
+        self._admitted.pop(request.request_id, None)
+        self._growth_commitments.pop(request.request_id, None)
+        self._retry_capacity.pop(request.request_id, None)
+        self._queued_at.pop(request.request_id, None)
+        if was_admitted:
+            self._completion_epoch += 1
+        self._executed_ranges.pop(request.request_id, None)
         metadata = self.metadata.pop(request.request_id, None)
         started = self.started.pop(request.request_id, None)
         self.scores.pop(request.request_id, None)
@@ -399,6 +559,47 @@ class SchedulingController:
             history.output_tokens += request.num_output_tokens
             history.completed += 1
             history.duration += max(0.0, time.monotonic() - started)
+
+    def cache_hits(self, request: Request, gpu: int, cpu: int) -> None:
+        self.metrics.count(Metric.GPU_HIT_TOKENS, gpu)
+        self.metrics.count(Metric.CPU_HIT_TOKENS, cpu)
+        if request.num_preemptions:
+            self.metrics.count(Metric.RESUME_GPU_HIT_TOKENS, gpu)
+            self.metrics.count(Metric.RESUME_CPU_HIT_TOKENS, cpu)
+
+    def executed(
+        self,
+        output: "SchedulerOutput",
+        result: "ModelRunnerOutput",
+        failed_loads: set[str] | None,
+    ) -> None:
+        # Observe returned model work, after scheduler rollback, using the
+        # positions saved in this output rather than mutable async progress.
+        cached = output.scheduled_cached_reqs
+        starts = dict(zip(cached.req_ids, cached.num_computed_tokens))
+        starts.update(
+            (r.req_id, r.num_computed_tokens) for r in output.scheduled_new_reqs
+        )
+        for request_id, count in output.num_scheduled_tokens.items():
+            if (
+                request_id not in self.metadata
+                or (failed_loads and request_id in failed_loads)
+                or request_id not in result.req_id_to_index
+            ):
+                continue
+            start = starts[request_id]
+            end = start + count
+            ranges = self._executed_ranges.setdefault(request_id, [])
+            repeated = sum(max(0, min(end, b) - max(start, a)) for a, b in ranges)
+            self.metrics.count(Metric.EXECUTED_TOKENS, count)
+            self.metrics.count(Metric.RECOMPUTED_TOKENS, repeated)
+            merged: list[tuple[int, int]] = []
+            for a, b in sorted([*ranges, (start, end)]):
+                if merged and a <= merged[-1][1]:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+                else:
+                    merged.append((a, b))
+            self._executed_ranges[request_id] = merged
 
     def order_key(self, request: Request) -> tuple[int, int, float, str]:
         return (
@@ -423,39 +624,64 @@ class SchedulingController:
                 break
             yield request, queue
 
-    def prefill_limit(
+    def victim(
         self,
         request: Request,
-        tokens: int,
-        backlog: bool,
-        running: int,
-        maximum: int,
-        *,
-        record_metric: bool = True,
-    ) -> int:
-        if (
-            tokens > 256
-            and request.request_id in self.metadata
-            and (
-                backlog or running >= max(2, maximum // 2) or self.manager.usage >= 0.8
-            )
-        ):
-            if record_metric:
-                self.metrics.count(Metric.PREFILL_CAPPED)
-            return 256
-        return tokens
-
-    def victim(self, request: Request, running: list[Request]) -> Request | None:
+        running: list[Request],
+        num_new_tokens: int = 1,
+        num_lookahead_tokens: int = 0,
+    ) -> Request | None:
         # Keep native victim selection for ordinary requesting work. Agent
         # scores are comparable only among annotated requests.
         if request.request_id not in self.metadata:
             return None
         candidates = [r for r in running if r.request_id in self.scores]
-        victim = max(candidates, key=self.order_key)
-        if (
-            victim is not request
-            and self.scores[request.request_id]
-            < self.scores[victim.request_id] + _PREEMPTION_MARGIN
-        ):
-            return request
-        return victim
+        lowest = min(self.scores[r.request_id] for r in candidates)
+        candidates = [
+            r
+            for r in candidates
+            if self.scores[r.request_id] <= lowest + _PREEMPTION_SCORE_BAND
+        ]
+        main_tokens = request.num_computed_tokens + num_new_tokens
+        needed = (
+            self.manager.coordinator.get_num_blocks_to_allocate(
+                request_id=request.request_id,
+                num_tokens=min(
+                    main_tokens + num_lookahead_tokens, self.manager.max_model_len
+                ),
+                new_computed_blocks=self.manager.empty_kv_cache_blocks.blocks,
+                num_encoder_tokens=0,
+                total_computed_tokens=request.num_computed_tokens,
+                num_tokens_main_model=main_tokens,
+            )
+            - self.manager.block_pool.get_num_free_blocks()
+        )
+        pool = self.manager.block_pool
+        released = {
+            r.request_id: sum(pool.blocks[b].ref_cnt == 1 for b in self._block_ids(r))
+            for r in candidates
+        }
+        sufficient = [
+            r
+            for r in candidates
+            if r is not request and released[r.request_id] >= needed
+        ]
+        if sufficient:
+            candidates = sufficient
+        else:
+            positive = [r for r in candidates if released[r.request_id] > 0]
+            if positive:
+                candidates = positive
+
+        def cost(r: Request) -> tuple:
+            computed = r.num_computed_tokens
+            near_finish = r.num_output_tokens >= 0.9 * r.max_tokens
+            return (
+                near_finish,
+                computed / max(1, released[r.request_id]),
+                computed,
+                -released[r.request_id],
+                (self.scores[r.request_id], -r.priority, -r.arrival_time, r.request_id),
+            )
+
+        return min(candidates, key=cost)

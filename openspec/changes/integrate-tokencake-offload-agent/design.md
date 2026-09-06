@@ -1,3 +1,5 @@
+# TokenCake Integration Design
+
 ## Context
 
 The target is vLLM v0.22.0 on branch `upstream` (`88e2f9aa7`, based on upstream tag commit `0b3ba88f1`). The behavior source is the clean `../vllm_agent` `submit-impl` HEAD `7a608a4e53ea990b2540c93b4d28cb795b905109`; the latest production optimization path, rather than older documents or dead code, is authoritative. The clean `../vllm-note` `main` HEAD `8b6de0eb9a09ef53f20cf06bd4d17ee264b9c2a7` is a read-only reference for current native vLLM patterns, not the target revision. Source documentation in `tools/tokencake_experiments/{README,STATUS}.md` and `docs/pkua100_cpu_offload_experiment_handoff.md` supplies experiment and implementation evidence. [TokenCake arXiv v4](https://arxiv.org/abs/2510.18586v4), revised 2026-08-21, supplies the frozen algorithmic context, but source HEAD resolves implementation differences.
@@ -10,7 +12,7 @@ The normal launcher order is generation completion, local post-processing, `stal
 
 **Goals:**
 
-- Preserve the effective latest-source scoring, adaptive reservation, admission, prefill-pressure cap, victim-selection, offload scoring, backoff, transfer prediction, and lifecycle behavior that remain on the production path, except for the explicit migration differences documented below.
+- Preserve latest-source request scoring, adaptive reservation, offload scoring, backoff, transfer prediction, and lifecycle behavior. Adapt admission, chunking, and victim selection to continued execution after preemption as described below.
 - Keep native v0.22 scheduling and CPU offload behavior unchanged when TokenCake is disabled.
 - Reuse the native connector data path and keep TokenCake-specific production code small and readable.
 - Make failures observable and benchmark comparisons work-equivalent and reproducible.
@@ -22,7 +24,7 @@ The normal launcher order is generation completion, local post-processing, `stal
 - Do not support or benchmark data parallelism greater than one in the first version; fail startup when either TokenCake switch enables mutable state with effective DP greater than one. Tensor and pipeline parallelism are not intentionally restricted, but are not claimed as validated by the single-GPU acceptance run.
 - Do not change benchmark retry count, prompt halving, DAG semantics, text validation, or application timing.
 
-The intentional differences from the latest fork are limited to the v0.22 integration choices in this design: native requeueing preemption and demand-driven H2D replace the old terminal preemption and proactive upload machinery; native tuple tie-breaking, the ordinary-request barrier, no ordinary borrowing, and an annotated-only pressure prefill cap keep ordinary traffic deterministic and native-shaped; Phase 1 uses a completed lifecycle snapshot instead of the global free-LRU frontier; and generic metadata/events replace MCP-specific protocol objects. These are explicit scope decisions rather than claims of byte-for-byte behavioral parity.
+The intentional differences from the latest fork are limited to the v0.22 integration choices in this design: native requeuing preemption and demand-driven H2D replace the old terminal preemption and proactive upload machinery; native tuple tie-breaking, the ordinary-request barrier, and no ordinary borrowing preserve the mixed-traffic ordering contract; aggregate prefill commitments govern admission while admitted requests retain native chunking and physical-capacity progress; Phase 1 uses a completed lifecycle snapshot instead of the global free-LRU frontier; and generic metadata/events replace MCP-specific protocol objects. These are explicit scope decisions rather than claims of byte-for-byte behavioral parity.
 
 ## Decisions
 
@@ -94,8 +96,8 @@ The controller owns score and reservation/accounting state under `vllm/tokencake
 
 - register metadata on admission and release accounting on preemption/finish;
 - snapshot waiting/running state and freeze dynamic scores once per scheduler step;
-- cap only annotated long prefills at the latest-source 256-token bound when backlog is present or GPU KV usage reaches 80%, after native token clamps;
-- check admission immediately before native allocation and commit only after allocation succeeds;
+- retain native prefill token clamps and batch budgets, replacing the fixed 256-token cap with aggregate logical capacity admission;
+- check new admission immediately before native allocation and commit only after allocation succeeds; retain a progress path for previously admitted requests;
 - choose an exact waiting candidate across the native waiting/skipped queues;
 - before allocating new blocks, evaluate any active detached preservation snapshot and emit connector-only work when it creates a store job;
 - choose a preemption victim, then call v0.22's native `_preempt_request()`.
@@ -107,6 +109,48 @@ For TokenCake requests, the latest request score is primary and the native tuple
 All requests share physical capacity. In a mixed workload, every allocation reduces available shared capacity, so an ordinary request can be deferred rather than consume protected capacity; it is never charged to or allowed to borrow a named per-agent reservation. When no queued or running request is annotated, TokenCake reservation and admission logic is bypassed completely. This is an intentional mixed-traffic simplification from the latest fork, which could lend an idle named reservation to an unannotated request.
 
 The reservation calculation preserves the latest source defaults and effective formulas, but block demand and commit accounting use v0.22's multi-cache-group allocation result rather than copying the old single-list block math. TokenCake changes only victim selection inside the native allocation-failure branch. If the victim was already selected earlier in the same scheduler step, the existing running-list removal, token-budget, block, speculative-token, encoder-input, and loop-index rollback is performed before `_preempt_request()` frees KV, marks `PREEMPTED`, resets computed progress, and requeues it. It never produces the old fork's terminal `FINISHED_PREEMPTED` behavior.
+
+The 2026-09-06 optimization revision makes reservations govern new admission.
+Already admitted requests allocate through the native physical-capacity path;
+growth beyond a revised partition is shared accounting debt that constrains
+later admissions until blocks are released. Physical exhaustion still selects
+a concrete running beneficiary and victims through native rollback/preemption.
+The admission gate uses the native coordinator's full-sequence, multi-group,
+recycling-aware requirement and adds the outstanding requirements of every
+admitted partial prefill, including asynchronous cache loads. These commitments
+are logical only; no full-prompt allocation or separate pool is created.
+
+Waiting order retains the original request score. Victim selection uses a
+bounded score neighborhood before comparing recomputation tokens and uniquely
+releasable blocks, prefers an adequate single victim when possible, and protects
+requests near their generation limit. Scores and time estimates are not added
+together. Physically preempted work waits for an improved capacity observation
+or completion of competing work before readmission. These cost rules are
+candidate policies subject to complete-DAG validation, not measured constants.
+
+The combined candidate restores native prefill chunking without introducing a
+replacement numeric cap. The user explicitly deferred single-factor ablations
+until after the overall improvement. Model-returned execution ranges count
+actual repeated computation, separately from rolled-back scheduling decisions.
+Bounded metrics also distinguish physical preemptions, reservation denials,
+prefill-capacity denials, resume GPU/CPU matches, and critical admission waits.
+For wholly annotated queues without LoRA constraints, each step reuses its
+resolved, score-sorted candidate order across capacity denials. Mixed traffic
+and LoRA eligibility retain the existing traversal; this optimization does not
+change admission or victim policy.
+
+The next combined revision enables `reserve_generation_tokens` by default.
+Logical commitments extend to original prompt length plus `max_tokens`, with
+native model-length and recycling-aware group limits and speculative lookahead.
+Already generated output does not increase the declared total again on resume.
+The prefill-only setting remains available for deployments with loose output
+bounds. Both modes keep incremental allocation in the native pool.
+
+Offload pressure now checks full admission commitments against uncommitted
+capacity and current allocation against physical free capacity. The preservation
+window caps the amount observed for protection; it does not disqualify an
+otherwise fitting prefill chunk larger than that window. The 128-block window
+and 32-block preservation bound remain unchanged for this revision.
 
 ### 4. Use one generic, acknowledged lifecycle-event path
 

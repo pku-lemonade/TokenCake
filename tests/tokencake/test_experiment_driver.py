@@ -11,13 +11,21 @@ from dataclasses import replace
 import psutil
 import pytest
 
-from tools.tokencake_experiments.campaign import DEVICES, ROOT, SOURCE, Case
+from tools.tokencake_experiments.campaign import (
+    DEVICES,
+    ROOT,
+    SOURCE,
+    Case,
+    client_command,
+    server_command,
+)
 from tools.tokencake_experiments.driver import Runner, audit
 from tools.tokencake_experiments.materialize import digest, materialize
 from tools.tokencake_experiments.preflight import (
     adapter,
     carry_exclusions,
     inherited_environment,
+    runtime_manifest,
 )
 from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
@@ -27,6 +35,39 @@ from tools.tokencake_experiments.runtime import (
     cpu_set,
     write_json,
 )
+
+
+def test_snapshot_fingerprint_detects_runtime_changes(tmp_path):
+    package = tmp_path / "vllm"
+    package.mkdir()
+    source = package / "__init__.py"
+    source.write_text("value = 1\n")
+    before = runtime_manifest(tmp_path)
+    cache = package / "__pycache__"
+    cache.mkdir()
+    (cache / "__init__.pyc").write_bytes(b"generated")
+    assert runtime_manifest(tmp_path) == before
+    source.write_text("value = 2\n")
+    assert runtime_manifest(tmp_path) != before
+    source.unlink()
+    assert not runtime_manifest(tmp_path)
+
+
+def test_diagnostic_case_freezes_runtime_and_keeps_full_workload(tmp_path):
+    case = Case("agent", 1.0, gpu_index=0)
+    snapshot = tmp_path / "runtime"
+    server, environment, cwd = server_command(case, 8055, target_checkout=snapshot)
+    client, _, _ = client_command(
+        case, 8055, tmp_path / "case", tmp_path / "launcher", tmp_path / "arrivals.json"
+    )
+    assert environment["PYTHONPATH"] == str(snapshot)
+    assert cwd == snapshot
+    assert server[:3] == client[:3] == ["taskset", "-c", DEVICES[0].cpus]
+    assert client[client.index("--num_requests") + 1] == "24"
+    assert Case("agent", 1.0).device == DEVICES[1]
+    assert server_command(Case("native", 1.0), 8055, target_checkout=snapshot)[2] == (
+        ROOT / ".venv/baseline"
+    )
 
 
 def test_environment_fingerprint_keeps_performance_knobs(monkeypatch):

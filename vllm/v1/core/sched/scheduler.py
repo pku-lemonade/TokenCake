@@ -274,6 +274,7 @@ class Scheduler(SchedulerInterface):
                     settings.scheduling,
                     self.kv_cache_manager,
                     self._tokencake_lifecycles.metrics,
+                    self.num_lookahead_tokens,
                 )
 
         self.use_pp = self.parallel_config.pipeline_parallel_size > 1
@@ -446,15 +447,6 @@ class Scheduler(SchedulerInterface):
             num_new_tokens = min(
                 num_new_tokens, self.max_model_len - 1 - request.num_computed_tokens
             )
-            if tokencake is not None:
-                num_new_tokens = tokencake.prefill_limit(
-                    request,
-                    num_new_tokens,
-                    bool(self.waiting or self.skipped_waiting),
-                    len(self.running),
-                    self.max_num_running_reqs,
-                )
-
             # Schedule encoder inputs.
             encoder_inputs_to_schedule = None
             external_load_encoder_input: list[int] = []
@@ -499,32 +491,31 @@ class Scheduler(SchedulerInterface):
             # Schedule newly needed KV blocks for the request.
             with record_function_or_nullcontext("schedule: allocate_slots"):
                 while True:
-                    if tokencake is not None and not tokencake.can_allocate(
+                    if tokencake is not None:
+                        tokencake.prepare_running(request)
+                    new_blocks = self.kv_cache_manager.allocate_slots(
                         request,
                         num_new_tokens,
                         num_lookahead_tokens=self.num_lookahead_tokens,
-                    ):
-                        # A running reservation denial must release capacity
-                        # through native preemption so waiting owners can progress.
-                        tokencake.defer(request)
-                        new_blocks = None
-                    else:
-                        new_blocks = self.kv_cache_manager.allocate_slots(
-                            request,
-                            num_new_tokens,
-                            num_lookahead_tokens=self.num_lookahead_tokens,
-                        )
+                    )
 
                     if new_blocks is not None:
                         # The request can be scheduled.
                         if tokencake is not None:
-                            tokencake.commit(request)
+                            tokencake.commit(
+                                request, running=True, new_blocks=new_blocks
+                            )
                         break
 
                     # The request cannot be scheduled.
                     # Preempt the lowest-priority request.
                     agent_victim = (
-                        tokencake.victim(request, self.running)
+                        tokencake.victim(
+                            request,
+                            self.running,
+                            num_new_tokens,
+                            self.num_lookahead_tokens,
+                        )
                         if tokencake is not None
                         else None
                     )
@@ -566,7 +557,9 @@ class Scheduler(SchedulerInterface):
                     else:
                         preempted_req = self.running.pop()
 
-                    self._preempt_request(preempted_req, scheduled_timestamp)
+                    self._preempt_request(
+                        preempted_req, scheduled_timestamp, physical=True
+                    )
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
                         # No more request to preempt. Cannot schedule this request.
@@ -630,6 +623,15 @@ class Scheduler(SchedulerInterface):
         # Next, schedule the WAITING requests.
         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
             step_skipped_waiting = create_request_queue(self.policy)
+            agent_order: deque[tuple[Request, RequestQueue]] | None = None
+            cache_agent_order = (
+                tokencake is not None
+                and not self.lora_config
+                and all(
+                    r.request_id in tokencake.metadata
+                    for r in itertools.chain(self.waiting, self.skipped_waiting)
+                )
+            )
 
             while (self.waiting or self.skipped_waiting) and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
@@ -652,6 +654,7 @@ class Scheduler(SchedulerInterface):
                         )
                     request_queue.pop_request()
                     step_skipped_waiting.prepend_request(request)
+                    agent_order = None
                     continue
 
                 # Check that adding the request still respects the max_loras
@@ -672,31 +675,50 @@ class Scheduler(SchedulerInterface):
                 if tokencake is not None and request_id in tokencake.metadata:
                     # Resolve eligibility before comparing the frozen scores.
                     # The native merged order's first ordinary request is a barrier.
-                    for candidate, queue in list(
-                        tokencake.annotated_prefix(
-                            self.waiting, self.skipped_waiting, self.policy
-                        )
-                    ):
-                        if candidate is request:
-                            continue
-                        blocked = self._is_blocked_waiting_status(candidate.status)
-                        if (
-                            blocked
-                            and not self._try_promote_blocked_waiting_request(candidate)
-                        ) or (
-                            self.lora_config
-                            and candidate.lora_request
-                            and len(scheduled_loras) == self.lora_config.max_loras
-                            and candidate.lora_request.lora_int_id
-                            not in scheduled_loras
+                    if agent_order is None:
+                        eligible = []
+                        for candidate, queue in list(
+                            tokencake.annotated_prefix(
+                                self.waiting, self.skipped_waiting, self.policy
+                            )
                         ):
-                            queue.remove_request(candidate)
-                            step_skipped_waiting.prepend_request(candidate)
-                            continue
-                        if tokencake.order_key(candidate) < tokencake.order_key(
-                            request
-                        ):
-                            request, request_queue = candidate, queue
+                            if candidate is not request:
+                                blocked = self._is_blocked_waiting_status(
+                                    candidate.status
+                                )
+                                if (
+                                    blocked
+                                    and not self._try_promote_blocked_waiting_request(
+                                        candidate
+                                    )
+                                ) or (
+                                    self.lora_config
+                                    and candidate.lora_request
+                                    and len(scheduled_loras)
+                                    == self.lora_config.max_loras
+                                    and candidate.lora_request.lora_int_id
+                                    not in scheduled_loras
+                                ):
+                                    queue.remove_request(candidate)
+                                    step_skipped_waiting.prepend_request(candidate)
+                                    continue
+                            if cache_agent_order:
+                                eligible.append((candidate, queue))
+                            elif tokencake.order_key(candidate) < tokencake.order_key(
+                                request
+                            ):
+                                request, request_queue = candidate, queue
+                        if cache_agent_order:
+                            # All scores and eligibility are frozen for this step.
+                            # Repeated capacity denials need not rescan the queue.
+                            agent_order = deque(
+                                sorted(
+                                    eligible,
+                                    key=lambda item: tokencake.order_key(item[0]),
+                                )
+                            )
+                    if agent_order is not None:
+                        request, request_queue = agent_order.popleft()
                     request_id = request.request_id
 
                 num_external_computed_tokens = 0
@@ -786,14 +808,6 @@ class Scheduler(SchedulerInterface):
                         break
 
                     num_new_tokens = min(num_new_tokens, token_budget)
-                    if tokencake is not None:
-                        num_new_tokens = tokencake.prefill_limit(
-                            request,
-                            num_new_tokens,
-                            bool(self.waiting or self.skipped_waiting),
-                            len(self.running),
-                            self.max_num_running_reqs,
-                        )
                     assert num_new_tokens > 0
 
                     # Schedule encoder inputs.
@@ -881,7 +895,12 @@ class Scheduler(SchedulerInterface):
                     break
 
                 if tokencake is not None:
-                    tokencake.commit(request)
+                    tokencake.commit(request, num_encoder_tokens=num_encoder_tokens)
+                    tokencake.cache_hits(
+                        request,
+                        num_new_local_computed_tokens,
+                        num_external_computed_tokens,
+                    )
 
                 # KVTransfer: the connector uses this info to determine
                 # if a load is needed. Note that
@@ -1073,7 +1092,9 @@ class Scheduler(SchedulerInterface):
     ) -> KVConnectorMetadata:
         return connector.build_connector_meta(scheduler_output)
 
-    def _preempt_request(self, request: Request, timestamp: float) -> None:
+    def _preempt_request(
+        self, request: Request, timestamp: float, *, physical: bool = False
+    ) -> None:
         """Preempt a request and put it back to the waiting queue.
 
         NOTE: The request should be popped from the running queue outside of this
@@ -1084,7 +1105,7 @@ class Scheduler(SchedulerInterface):
         )
         self.kv_cache_manager.free(request)
         if self._tokencake_scheduling is not None:
-            self._tokencake_scheduling.preempt(request)
+            self._tokencake_scheduling.preempt(request, physical=physical)
         self.encoder_cache_manager.free(request)
         request.status = RequestStatus.PREEMPTED
         request.num_computed_tokens = 0
@@ -1493,6 +1514,10 @@ class Scheduler(SchedulerInterface):
         # to avoid expensive operations inside the loop.
         stopped_running_reqs: set[Request] = set()
         stopped_preempted_reqs: set[Request] = set()
+        if self._tokencake_scheduling is not None:
+            self._tokencake_scheduling.executed(
+                scheduler_output, model_runner_output, failed_kv_load_req_ids
+            )
         for req_id, num_tokens_scheduled in num_scheduled_tokens.items():
             assert num_tokens_scheduled > 0
             if failed_kv_load_req_ids and req_id in failed_kv_load_req_ids:

@@ -459,6 +459,38 @@ def test_waiting_pressure_does_not_allocate_or_record_prefix_hits():
     assert manager.block_pool.get_num_free_blocks() == free
 
 
+@pytest.mark.parametrize("scheduling", [False, True])
+@pytest.mark.parametrize("blocks,expected", [(64, 8), (17, 0)])
+def test_preservation_window_bounds_observation_not_prefill_size(
+    scheduling, blocks, expected
+):
+    scheduler = make_offload_scheduler(gpu_blocks=blocks, scheduling=scheduling)
+    scheduler.add_request(request_for("waiting", tokens=512))
+    controller = scheduler._tokencake_scheduling
+    if controller is not None:
+        controller.begin_step(scheduler.waiting, scheduler.running)
+    manager = scheduler.kv_cache_manager
+    free = manager.block_pool.get_num_free_blocks()
+    before = scheduler._tokencake_lifecycles.metrics.snapshot(1)
+    assert waiting_pressure(scheduler, 8, "first_fit").fit_demand == expected
+    assert manager.block_pool.get_num_free_blocks() == free
+    assert scheduler._tokencake_lifecycles.metrics.snapshot(1) == before
+
+
+def test_waiting_pressure_respects_outstanding_generation_commitments():
+    scheduler = make_offload_scheduler(gpu_blocks=12, scheduling=True)
+    first = request_for("running", tokens=64)
+    first.max_tokens = 64
+    scheduler.add_request(first)
+    scheduler.schedule()
+    scheduler.add_request(request_for("waiting", tokens=64, value=1))
+    controller = scheduler._tokencake_scheduling
+    controller.begin_step(scheduler.waiting, scheduler.running)
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == 7
+    assert controller.uncommitted_blocks == 3
+    assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 0
+
+
 def test_ordinary_store_progress_and_completion_delegate_to_native_connector():
     scheduler = make_offload_scheduler()
     ordinary = request_for("ordinary", annotated=False)

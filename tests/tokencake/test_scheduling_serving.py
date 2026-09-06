@@ -92,11 +92,16 @@ def test_mixed_contended_generation_and_recovery(pressure_server):
         after = client.get(pressure_server.url_for("metrics")).text
         assert metric_value(
             after, "vllm:tokencake_scheduling_total", outcome="prefill_capped"
-        ) > metric_value(
+        ) == metric_value(
             before, "vllm:tokencake_scheduling_total", outcome="prefill_capped"
         )
-        assert metric_value(after, "vllm:num_preemptions_total") > metric_value(
-            before, "vllm:num_preemptions_total"
+        assert (
+            metric_value(
+                after,
+                "vllm:tokencake_scheduling_total",
+                outcome="reservation_preempted",
+            )
+            == 0
         )
         # After the pressure wave, ordinary work must reproduce the serial result.
         recovered = client.post(url, json=bodies[0])

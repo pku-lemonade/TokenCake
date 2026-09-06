@@ -132,6 +132,27 @@ disposable launchers, and checks that target and source environments construct
 the identical 24-DAG workload and arrival traces. The destination must be new.
 There are no workload truncation or smoke options in this driver.
 
+For an uncommitted optimization candidate, `--snapshot-target` freezes the
+runtime files, native extensions, and patch in a new campaign directory.
+The baseline checkout remains the native reference. A diagnostic subset can
+still execute the full 24-DAG workload at one QPS:
+
+```bash
+.venv/bin/python -m tools.tokencake_experiments.driver prepare \
+  /root/autodl-tmp/tokencake-optimization/candidate \
+  --snapshot-target --mode native --mode agent --mode offload-agent --qps 1.0
+.venv/bin/python -m tools.tokencake_experiments.driver run-cases \
+  /root/autodl-tmp/tokencake-optimization/candidate
+```
+
+`run-cases` launches each prepared identity once and retains the normal
+correctness, isolation, and provenance checks. It does not launch automatic
+repeats or unprepared QPS points. Partial reports list missing comparisons and
+cannot pass the complete acceptance matrix. Newly prepared campaigns require
+25% native-relative E2E reduction; older frozen campaigns keep their original
+threshold. Optional `--gpu 0` or `--gpu 1` creates an explicit placement identity;
+omitting it preserves the historical identity representation.
+
 `run` starts a fresh server per case and executes the two independent queues.
 Only affected comparison members receive repeats, including excluded launches
 in the three-launch maximum. Mooncake has one launch per QPS. Both clients and

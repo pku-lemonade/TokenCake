@@ -6,13 +6,69 @@ from dataclasses import replace
 import pytest
 
 from tools.tokencake_experiments.campaign import Case, initial_queues
-from tools.tokencake_experiments.report import Identity, compare, evaluate, measurements
+from tools.tokencake_experiments.driver import load_identity
+from tools.tokencake_experiments.report import (
+    Identity,
+    compare,
+    content_hash,
+    evaluate,
+    measurements,
+)
 
 
 def identity(mode, qps=1.0, phase="phase-1"):
     return Identity(
         Case(mode, qps, phase), "code", "env", "launcher", "inputs", "config"
     )
+
+
+def test_default_gpu_preserves_historical_identity_hash():
+    fields = {
+        "case": {"mode": "agent", "qps": 1.0, "phase": "phase-1"},
+        "artifact_sha256": "code",
+        "environment_sha256": "env",
+        "launcher_sha256": "launcher",
+        "workload_sha256": "inputs",
+        "config_sha256": "config",
+    }
+    historical = fields | {"key": content_hash(fields)}
+    assert load_identity(historical).payload() == historical
+    explicit = replace(identity("agent"), case=Case("agent", 1.0, gpu_index=0))
+    assert explicit.key != historical["key"]
+    assert load_identity(explicit.payload()) == explicit
+
+
+def test_twenty_five_percent_gate_is_separate_from_historical_gate():
+    target, reference = identity("offload-agent"), identity("native")
+    rows = [
+        result(case, seconds, launch)
+        for launch in range(3)
+        for case, seconds in ((target, 80), (reference, 100))
+    ]
+    historical = compare(target, reference, rows)
+    current = compare(target, reference, rows, native_improvement=0.25)
+    assert historical["status"] == "pass"
+    assert current["status"] == "fail"
+    assert current["maximum_ratio"] == 0.75
+    assert current["gate_id"] != historical["gate_id"]
+
+
+def test_single_qps_diagnostic_cannot_pass_the_three_qps_acceptance():
+    identities = [identity(mode) for mode in ("native", "agent", "offload-agent")]
+    rows = [
+        result(case, 70 if case.case.mode == "offload-agent" else 100)
+        for case in identities
+    ]
+    report = evaluate(identities, rows, include_old=False, native_improvement=0.25)
+    assert len(report["gates"]) == 2
+    assert all(gate["status"] == "pass" for gate in report["gates"])
+    assert not report["passed"]
+    assert not report["applicable_gates_passed"]
+    assert report["requested_launches"] == {}
+    assert {
+        (item["qps"], item["reference_mode"])
+        for item in report["unprepared_comparisons"]
+    } == {(qps, mode) for qps in (0.5, 0.1) for mode in ("native", "agent")}
 
 
 def result(case, seconds, launch=0, *, qualifying=True, preempted=0):

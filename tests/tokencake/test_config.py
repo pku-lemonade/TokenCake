@@ -38,6 +38,7 @@ def test_absent_and_immutable_defaults(monkeypatch):
     assert settings.scheduling.enabled and settings.offload.enabled
     assert settings.temporal_selection == "first_fit"
     assert settings.scheduling.reserve_ratio_min == 0.05
+    assert settings.scheduling.reserve_generation_tokens
     assert settings.offload.transfer.d2h_bandwidth_gbps == 12.0
     with pytest.raises(FrozenInstanceError):
         settings.scheduling.enabled = False
@@ -82,6 +83,7 @@ def test_temporal_selection(policy):
         {"offload": {"unknown": 1}},
         {"offload": {"transfer": {"unknown": 1}}},
         {"scheduling": {"enabled": 1}},
+        {"scheduling": {"reserve_generation_tokens": 1}},
         {"offload": {"enabled": "true"}},
         {"scheduling": {"enabled": False, "critical_ratio": 0.75}},
         {"offload": {"enabled": False, "transfer": {}}},

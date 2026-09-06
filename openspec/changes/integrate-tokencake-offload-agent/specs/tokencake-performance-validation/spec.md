@@ -1,3 +1,5 @@
+# TokenCake Performance Validation
+
 ## Purpose
 
 Define a reproducible, correctness-gated end-to-end evaluation that determines whether the migrated TokenCake scheduling and offload behavior meets its performance targets on the agreed A800 agent workload.
@@ -71,7 +73,7 @@ The primary metric `performance.total_e2e_s` SHALL measure wall-clock time from 
 
 ### Requirement: Offload-agent SHALL satisfy all hard performance gates
 
-For each required QPS, let `T_native`, `T_agent`, `T_target_oa`, and `T_old_oa` be qualifying `performance.total_e2e_s` values for native baseline, target agent-only, target offload-agent, and latest-old offload-agent. Target offload-agent SHALL satisfy `(T_native - T_target_oa) / T_native >= 0.10`; SHALL satisfy `T_target_oa <= 1.05 * T_agent`; and, when the old result is work-equivalent, SHALL satisfy `T_target_oa <= T_old_oa`. These gates SHALL be evaluated independently at every QPS, including the five-percent agent-only bound at QPS `1.0`.
+For each required QPS, let `T_native`, `T_agent`, `T_target_oa`, and `T_old_oa` be qualifying `performance.total_e2e_s` values for native baseline, target agent-only, target offload-agent, and latest-old offload-agent. Following the 2026-09-06 user confirmation, target offload-agent SHALL satisfy `(T_native - T_target_oa) / T_native >= 0.25`; SHALL satisfy `T_target_oa <= 1.05 * T_agent`; and, when the old result is work-equivalent, SHALL satisfy `T_target_oa <= T_old_oa`. These gates SHALL be evaluated independently at every QPS. Historical campaigns SHALL retain their recorded thresholds; the new 25% gate SHALL have a distinct gate identity. The combined optimization SHALL precede single-factor ablations.
 
 #### Scenario: A single-run point is clearly above every threshold
 
@@ -80,7 +82,7 @@ For each required QPS, let `T_native`, `T_agent`, `T_target_oa`, and `T_old_oa` 
 
 #### Scenario: Native improvement is insufficient
 
-- **WHEN** the qualifying target offload-agent time does not improve upon native baseline by at least ten percent at a required QPS
+- **WHEN** the qualifying target offload-agent time does not improve upon native baseline by at least twenty-five percent at a required QPS
 - **THEN** the native-improvement hard gate SHALL fail for that QPS after applying the repetition rule
 
 #### Scenario: Agent-only regression exceeds the allowance

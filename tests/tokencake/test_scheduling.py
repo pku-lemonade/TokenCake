@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from tests.v1.core.utils import create_requests, create_scheduler
+from tests.v1.core.utils import create_requests, create_scheduler, mock_kv
 from vllm.config import LoRAConfig
 from vllm.config.utils import replace
 from vllm.lora.request import LoRARequest
@@ -25,11 +25,13 @@ from vllm.v1.core.encoder_cache_manager import EncoderCacheManager
 from vllm.v1.core.sched.request_queue import SchedulingPolicy, create_request_queue
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.kv_cache_interface import KVCacheGroupSpec
-from vllm.v1.outputs import ModelRunnerOutput
+from vllm.v1.outputs import KVConnectorOutput, ModelRunnerOutput
 from vllm.v1.request import RequestStatus
 
 
-def make_scheduler(*, enabled=True, policy="fcfs", groups=1, **kwargs):
+def make_scheduler(
+    *, enabled=True, policy="fcfs", groups=1, reserve_generation_tokens=False, **kwargs
+):
     base = create_scheduler(**kwargs)
     config = replace(
         base.vllm_config,
@@ -41,7 +43,14 @@ def make_scheduler(*, enabled=True, policy="fcfs", groups=1, **kwargs):
         ),
         additional_config={
             "tokencake": {
-                "scheduling": {"enabled": enabled},
+                "scheduling": {
+                    "enabled": enabled,
+                    **(
+                        {"reserve_generation_tokens": reserve_generation_tokens}
+                        if enabled
+                        else {}
+                    ),
+                },
                 "offload": {"enabled": False},
             }
         },
@@ -197,13 +206,12 @@ def test_lora_eligibility_precedes_agent_selection():
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("annotated", [False, True])
 @pytest.mark.parametrize("threshold", [128, 1024])
-def test_prefill_cap_preserves_native_clamps(enabled, annotated, threshold):
+def test_prefill_preserves_native_clamps(enabled, annotated, threshold):
     scheduler = make_scheduler(enabled=enabled, long_prefill_token_threshold=threshold)
     request = make_request("long", importance=1 if annotated else None, tokens=1024)
     scheduler.add_request(request)
     output = scheduler.schedule()
-    expected = min(threshold, 256) if enabled and annotated else threshold
-    assert output.num_scheduled_tokens["long"] == expected
+    assert output.num_scheduled_tokens["long"] == threshold
     assert request.status == RequestStatus.RUNNING
 
 
@@ -290,7 +298,7 @@ def test_reservation_denial_and_allocation_failure_leave_request_pending():
     oversized = make_request("oversized", tokens=64)
     scheduler.add_request(oversized)
     assert not scheduler.schedule().num_scheduled_tokens
-    assert oversized in scheduler.waiting
+    assert oversized in scheduler.skipped_waiting
     assert not scheduler._tokencake_scheduling.charges
 
 
@@ -307,7 +315,7 @@ def test_native_preemption_rollback_and_recomputation(victim_scheduled, margin):
     if not victim_scheduled:
         scheduler.running.reverse()
     output = scheduler.schedule()
-    victim = low if margin == 100 else high
+    victim = low
     survivor = high if victim is low else low
     assert victim.status == RequestStatus.PREEMPTED
     assert victim in scheduler.waiting and not victim.is_finished()
@@ -327,8 +335,218 @@ def test_native_preemption_rollback_and_recomputation(victim_scheduled, margin):
     assert not controller.charges and not controller.metadata
 
 
+@pytest.mark.parametrize("groups,blocks,committed", [(1, 13, 6), (2, 19, 9)])
+def test_admission_accounts_for_all_inflight_prefill_growth(groups, blocks, committed):
+    scheduler = make_scheduler(
+        groups=groups, num_blocks=blocks, long_prefill_token_threshold=32
+    )
+    first, second = [make_request(name, tokens=128) for name in ("first", "second")]
+    for request in (first, second):
+        scheduler.add_request(request)
+    output = scheduler.schedule()
+    assert output.num_scheduled_tokens == {"first": 32}
+    controller = scheduler._tokencake_scheduling
+    assert controller._growth_commitments["first"] == committed
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() > 0
+    assert second in scheduler.skipped_waiting
+    assert controller.metrics.snapshot(0)["scheduling.prefill_capacity_denied"] > 0
+    scheduler.finish_requests("first", RequestStatus.FINISHED_ABORTED)
+    assert "first" not in controller._growth_commitments
+    assert scheduler.schedule().num_scheduled_tokens == {"second": 32}
+
+
 @pytest.mark.parametrize("policy", ["fcfs", "priority"])
-def test_running_reservation_denial_requeues_to_unblock_waiting_owner(policy):
+def test_capacity_denials_reuse_frozen_order_without_skipping_fitting_work(policy):
+    scheduler = make_scheduler(
+        num_blocks=9,
+        max_num_batched_tokens=32,
+        max_model_len=512,
+        policy=policy,
+    )
+    requests = [
+        make_request(f"large-{i}", tokens=256, importance=i + 1) for i in range(16)
+    ]
+    fitting = make_request("fitting", tokens=64)
+    for request in [*requests, fitting]:
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    with (
+        patch.object(
+            controller, "annotated_prefix", wraps=controller.annotated_prefix
+        ) as prefix,
+        patch.object(
+            controller, "can_allocate", wraps=controller.can_allocate
+        ) as admission,
+    ):
+        output = scheduler.schedule()
+    assert output.num_scheduled_tokens == {fitting.request_id: 32}
+    assert [call.args[0] for call in admission.call_args_list] == [
+        *reversed(requests),
+        fitting,
+    ]
+    assert prefix.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "groups,blocks,committed,available", [(1, 10, 4, 3), (2, 16, 6, 6)]
+)
+def test_generation_capacity_commitment_completes_without_overcommit(
+    groups, blocks, committed, available
+):
+    scheduler = make_scheduler(
+        groups=groups, num_blocks=blocks, reserve_generation_tokens=True
+    )
+    requests = [make_request(name, tokens=32) for name in ("first", "second")]
+    for request in requests:
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    output = scheduler.schedule()
+    controller = scheduler._tokencake_scheduling
+    assert output.num_scheduled_tokens == {"first": 32}
+    assert controller._growth_commitments["first"] == committed
+    assert controller.uncommitted_blocks == available
+    assert all(not r.num_preemptions for r in requests)
+    decode(scheduler, output)
+    for _ in range(128):
+        if all(r.is_finished() for r in requests):
+            break
+        decode(scheduler, scheduler.schedule())
+    assert all(r.is_finished() and r.num_output_tokens == 64 for r in requests)
+    assert all(not r.num_preemptions for r in requests)
+    assert not controller._growth_commitments
+    assert controller.metrics.snapshot(0)["scheduling.generation_capacity_denied"] > 0
+
+
+def test_generation_budget_is_not_double_counted_after_partial_output():
+    scheduler = make_scheduler(reserve_generation_tokens=True)
+    request = make_request("request", tokens=32)
+    request.max_tokens = 64
+    controller = scheduler._tokencake_scheduling
+    assert controller.admission_tokens(request) == 96
+    request.append_output_token_ids([100] * 32)
+    assert controller.admission_tokens(request) == 96
+
+
+def test_generation_capacity_includes_native_speculative_lookahead():
+    base = make_scheduler(
+        num_blocks=14,
+        num_speculative_tokens=8,
+        reserve_generation_tokens=True,
+    )
+    # The shared ngram fixture reserves no lookahead; use draft-model semantics.
+    with patch.object(
+        type(base.vllm_config.speculative_config), "uses_draft_model", return_value=True
+    ):
+        scheduler = Scheduler(
+            base.vllm_config,
+            base.kv_cache_config,
+            base.structured_output_manager,
+            base.cache_config.block_size,
+            log_stats=True,
+        )
+    for name in ("first", "second"):
+        request = make_request(name, tokens=32)
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    assert scheduler.schedule().num_scheduled_tokens == {"first": 32}
+    controller = scheduler._tokencake_scheduling
+    assert controller.num_lookahead_tokens == scheduler.num_lookahead_tokens == 8
+    assert controller._growth_commitments["first"] == 5
+    assert controller.uncommitted_blocks == 6
+
+
+def test_resume_waits_for_released_capacity_from_other_work():
+    scheduler = make_scheduler(num_blocks=10)
+    first = make_request("first", tokens=32)
+    second = make_request("second", tokens=32)
+    for request in (first, second):
+        scheduler.add_request(request)
+    decode(scheduler, scheduler.schedule())
+    scheduler.running.remove(first)
+    scheduler._preempt_request(first, 1001.0, physical=True)
+    scheduler.prev_step_scheduled_req_ids.discard("first")
+    output = scheduler.schedule()
+    assert "first" not in output.num_scheduled_tokens
+    assert first.status == RequestStatus.PREEMPTED
+    assert (
+        scheduler._tokencake_scheduling.metrics.snapshot(0)[
+            "scheduling.resume_deferred"
+        ]
+        > 0
+    )
+    scheduler.finish_requests("second", RequestStatus.FINISHED_STOPPED)
+    assert "first" in scheduler.schedule().num_scheduled_tokens
+
+
+@pytest.mark.parametrize("near_finish", [False, True])
+def test_victim_cost_and_near_completion_with_similar_importance(near_finish):
+    scheduler = make_scheduler(num_blocks=20)
+    beneficiary = make_request("beneficiary", tokens=32, importance=50)
+    expensive = make_request("expensive", tokens=144, importance=1)
+    cheap = make_request("cheap", tokens=16, importance=2)
+    cheap.append_output_token_ids([100] * 116)
+    cheap.max_tokens = 128 if near_finish else 256
+    for request, allocated, computed in (
+        (beneficiary, 16, 16),
+        (expensive, 144, 144),
+        (cheap, 144, 132),
+    ):
+        scheduler.add_request(request)
+        scheduler.waiting.remove_request(request)
+        scheduler.running.append(request)
+        request.status = RequestStatus.RUNNING
+        assert scheduler.kv_cache_manager.allocate_slots(request, allocated) is not None
+        request.num_computed_tokens = computed
+    controller = scheduler._tokencake_scheduling
+    controller.begin_step([], scheduler.running)
+    assert controller.victim(beneficiary, scheduler.running, 16) is (
+        expensive if near_finish else cheap
+    )
+
+
+def test_victim_releases_enough_physical_blocks_for_beneficiary():
+    scheduler = make_scheduler(num_blocks=7)
+    beneficiary = make_request("beneficiary", tokens=64, importance=50)
+    tiny = make_request("tiny", tokens=16, importance=1)
+    adequate = make_request("adequate", tokens=64, importance=2)
+    for request, allocated in ((beneficiary, 16), (tiny, 16), (adequate, 64)):
+        scheduler.add_request(request)
+        scheduler.waiting.remove_request(request)
+        scheduler.running.append(request)
+        request.status = RequestStatus.RUNNING
+        assert scheduler.kv_cache_manager.allocate_slots(request, allocated) is not None
+        request.num_computed_tokens = allocated
+    controller = scheduler._tokencake_scheduling
+    controller.begin_step([], scheduler.running)
+    assert controller.victim(beneficiary, scheduler.running, 48) is adequate
+
+
+def test_execution_metrics_keep_positions_from_each_inflight_output():
+    scheduler = make_scheduler(long_prefill_token_threshold=16)
+    request = make_request("request", tokens=64)
+    scheduler.add_request(request)
+    first = scheduler.schedule()
+    second = scheduler.schedule()
+    assert request.num_computed_tokens == 32
+    for output in (first, second):
+        scheduler.update_from_output(
+            output,
+            ModelRunnerOutput(
+                req_ids=["request"],
+                req_id_to_index={"request": 0},
+                sampled_token_ids=[[]],
+                logprobs=None,
+                prompt_logprobs_dict={},
+                pooler_output=[],
+            ),
+        )
+    metrics = scheduler._tokencake_scheduling.metrics.snapshot(0)
+    assert metrics["scheduling.executed_tokens"] == 32
+    assert metrics["scheduling.recomputed_tokens"] == 0
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_reservation_changes_preserve_running_progress_and_release_to_owner(policy):
     scheduler = make_scheduler(num_blocks=11, policy=policy)
     running = make_request("running", agent_type="borrower", tokens=128)
     owner = make_request("owner", agent_type="owner", tokens=64, importance=100)
@@ -338,19 +556,103 @@ def test_running_reservation_denial_requeues_to_unblock_waiting_owner(policy):
     running.status = RequestStatus.RUNNING
     assert scheduler.kv_cache_manager.allocate_slots(running, 128) is not None
     running.num_computed_tokens = 128
+    running.max_tokens = 4
     running.append_output_token_ids([100])
     scheduler.add_request(owner)
     controller = scheduler._tokencake_scheduling
     controller.plan = CapacityPlan({"owner"}, {"owner": 100.0}, {"owner": 2}, 8)
     assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == 2
     output = scheduler.schedule()
-    assert running.status == RequestStatus.PREEMPTED
-    assert running in scheduler.waiting and not running.is_finished()
-    assert not output.num_scheduled_tokens
+    assert output.num_scheduled_tokens == {"running": 1}
+    assert running.status == RequestStatus.RUNNING
+    assert not running.num_preemptions
+    decode(scheduler, output)
+    while not running.is_finished():
+        decode(scheduler, scheduler.schedule())
+    assert "owner" in scheduler.schedule().num_scheduled_tokens
+    assert not running.num_preemptions
+
+
+def test_recomputation_metrics_use_returned_ranges_and_ignore_rollback():
+    scheduler = make_scheduler(enable_prefix_caching=False)
+    request = make_request("request", tokens=32)
+    scheduler.add_request(request)
+    output = scheduler.schedule()
+    controller = scheduler._tokencake_scheduling
+    assert controller.metrics.snapshot(0)["scheduling.executed_tokens"] == 0
+    decode(scheduler, output)
+    scheduler.running.remove(request)
+    scheduler._preempt_request(request, 1001.0, physical=True)
+    scheduler.prev_step_scheduled_req_ids.clear()
     resumed = scheduler.schedule()
-    assert "owner" in resumed.num_scheduled_tokens
-    scheduler.finish_requests("owner", RequestStatus.FINISHED_STOPPED)
-    assert "running" in scheduler.schedule().num_scheduled_tokens
+    decode(scheduler, resumed)
+    metrics = controller.metrics.snapshot(0)
+    assert metrics["scheduling.executed_tokens"] == 65
+    assert metrics["scheduling.recomputed_tokens"] == 32
+    assert metrics["scheduling.physical_preempted"] == 1
+    assert metrics["scheduling.reservation_preempted"] == 0
+    scheduler.finish_requests(request.request_id, RequestStatus.FINISHED_ABORTED)
+    assert not controller._executed_ranges
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_resume_cache_metrics_count_native_matches_once_per_admission(is_async):
+    scheduler = make_scheduler(
+        long_prefill_token_threshold=32,
+        enable_prefix_caching=True,
+        use_kv_connector=mock_kv(matched_tokens=32, is_async=is_async),
+    )
+    request = make_request("request", tokens=128)
+    scheduler.add_request(request)
+
+    def admit():
+        output = scheduler.schedule()
+        if is_async:
+            assert not output.num_scheduled_tokens
+            assert request.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+            scheduler.update_from_output(
+                output,
+                ModelRunnerOutput(
+                    req_ids=[],
+                    req_id_to_index={},
+                    sampled_token_ids=[],
+                    logprobs=None,
+                    prompt_logprobs_dict={},
+                    pooler_output=[],
+                    kv_connector_output=KVConnectorOutput(
+                        finished_recving={request.request_id}
+                    ),
+                ),
+            )
+            output = scheduler.schedule()
+        assert output.num_scheduled_tokens == {request.request_id: 32}
+        return output
+
+    first = admit()
+    scheduler.update_from_output(
+        first,
+        ModelRunnerOutput(
+            req_ids=[request.request_id],
+            req_id_to_index={request.request_id: 0},
+            sampled_token_ids=[[]],
+            logprobs=None,
+            prompt_logprobs_dict={},
+            pooler_output=[],
+        ),
+    )
+    assert request.num_computed_tokens == 64
+    scheduler.running.remove(request)
+    scheduler._preempt_request(request, 1001.0, physical=True)
+    scheduler.prev_step_scheduled_req_ids.clear()
+    decode(scheduler, admit())
+    metrics = scheduler._tokencake_scheduling.metrics.snapshot(0)
+    assert metrics["scheduling.gpu_hit_tokens"] == 64
+    assert metrics["scheduling.cpu_hit_tokens"] == 64
+    assert metrics["scheduling.resume_gpu_hit_tokens"] == 64
+    assert metrics["scheduling.resume_cpu_hit_tokens"] == 32
+    assert metrics["scheduling.admitted"] == 2
+    assert metrics["scheduling.executed_tokens"] == 64
+    assert metrics["scheduling.recomputed_tokens"] == 0
 
 
 def test_scheduled_victim_restores_encoder_speculative_and_token_budgets():

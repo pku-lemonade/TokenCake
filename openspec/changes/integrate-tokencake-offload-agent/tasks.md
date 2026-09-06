@@ -66,7 +66,7 @@
 - [ ] 8.4 After all target primary cases complete, start the unchanged latest-old offload-agent queue on GPU0 and the current Mooncake queue on GPU1 concurrently, each at QPS `1.0`, `0.5`, then `0.1`; verify the old results record `FINISHED_PREEMPTED` and Mooncake runs the full workload without connector errors.
 - [ ] 8.5 Exclude work-inequivalent old results from the parity gate without inventing an alternate comparison; for each work-equivalent target-versus-old comparison, apply the failure/gray-band rule after both initial reference queues finish, reuse existing target repeats, and run only missing pair members up to three total launches per mode/QPS including exclusions.
 - [ ] 8.6 Report each correctness-qualified Mooncake timing as a once-per-QPS non-gating speed reference and do not repeat Mooncake for a hard performance decision.
-- [ ] 8.7 Produce the Phase-1 per-QPS gate and attribution report using `performance.total_e2e_s`; verify it evaluates native improvement of at least 10%, target agent-only regression no greater than 5%, and qualifying latest-old parity, with diagnostic latency/throughput/retry/transfer data kept secondary.
+- [ ] 8.7 Produce the per-QPS gate and attribution report using `performance.total_e2e_s`; verify the revised optimization evaluates native improvement of at least 25%, target agent-only regression no greater than 5%, and qualifying latest-old parity, with diagnostic latency/throughput/retry/transfer data kept secondary. Preserve historical reports under their original thresholds.
 
 ## 9. Apply The Evidence-Gated Phase 2 Only If Needed
 
@@ -80,3 +80,31 @@
 - [ ] 10.1 Re-run strict OpenSpec validation, `git diff --check`, focused tests, and applicable pre-commit hooks; verify all commands and results are recorded and no implementation task relies on a smoke run.
 - [ ] 10.2 Review every changed line against the minimal-scope exclusions, vLLM license/style conventions, disabled native behavior, source-worktree cleanliness, and human-review requirements; verify the handoff explicitly identifies AI assistance and any remaining unvalidated TP/PP scope.
 - [ ] 10.3 Deliver the final correctness/performance/provenance report and implementation diff for human review; verify every hard gate has a qualifying result or an explicit user-owned unresolved decision, and do not open a PR until the mandatory duplicate-work checks and human review are completed.
+
+## 11. Optimize Continued Execution After Preemption (2026-09-06)
+
+The user confirmed a 25% total-E2E reduction against native vLLM at every QPS,
+combined optimization before ablations, and backward-compatible experiment
+identities. Earlier checked implementation tasks record the original port;
+this section tracks its newly authorized scheduling revision.
+
+- [x] 11.1 Make reservations govern new admission and let admitted requests grow through native allocation and physical preemption; test reservation changes, shared debt, rollback, and eventual capacity release to waiting owners.
+- [x] 11.2 Account conservatively for all admitted prefill growth using native multi-group admission requirements without preallocating KV; test different block sizes, deferred second admission, and exact release.
+- [x] 11.3 Verify importance-bounded, recomputation-aware victim selection, adequate physical relief, near-completion protection, and capacity-sensitive readmission with native rollback and asynchronous execution.
+- [x] 11.4 Restore native prefill chunking and remove the unconditional backlog-triggered 256 cap, including matching offload pressure estimation. Defer alternative numeric caps and ablations until after combined optimization.
+- [x] 11.5 Verify actual executed/recomputed-token counters, recovery GPU/CPU matches, physical versus reservation decisions, and bounded critical-wait metrics.
+- [x] 11.6 Freeze candidate runtime snapshots, preserve historical hashes when no GPU override is present, and record the 25% threshold without reinterpreting old campaigns.
+- [x] 11.7 Run the combined scheduling candidate on QPS 1.0 with all 24 DAGs, inspect E2E, application tails, repeated computation, and starvation evidence, then evaluate offload contribution. All three cases qualify; the candidate misses the initial 25% threshold and offload stores no blocks. See `evidence/stage-9-continued-execution-optimization.md`.
+- [ ] 11.8 Complete qualifying runs at QPS 1.0, 0.5, and 0.1 with the final candidate and evaluate the strict 25% native-relative gate at each point, applying the existing repetition rules when required.
+
+## 12. Autonomous Optimization Stages
+
+The user subsequently authorized independent strategy decisions and continued
+iteration toward the same performance standard, with end-to-end validation and
+a code commit for every completed stage. This supersedes the pending strategy
+confirmation in the stage-9 evidence; no performance requirement is relaxed.
+
+- [ ] 12.1 Commit declared generation growth through native multi-group admission requirements, including lookahead and resume accounting, while retaining configurable full-input-only admission; verify incremental allocation and eventual complete outputs without aggregate overcommit.
+- [ ] 12.2 Correct offload pressure so the observation window bounds protection rather than request admission; verify physical capacity, aggregate logical capacity, and observation purity.
+- [ ] 12.3 Freeze the combined revision, run full QPS 1.0 native/agent/offload-agent cases, record correctness, E2E, tail waits, actual recomputation and CPU/GPU reuse, and commit the stage with its evidence.
+- [ ] 12.4 Use the complete-DAG evidence to continue combined scheduling/preservation improvements until task 11.8 is satisfied; retain the three core ideas and commit each end-to-end-tested stage.

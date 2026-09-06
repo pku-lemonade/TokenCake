@@ -142,7 +142,15 @@ def hardware_preflight() -> dict:
     }
 
 
-def verify_code() -> dict[str, dict]:
+def runtime_manifest(checkout: Path) -> dict[str, str]:
+    return {
+        str(path.relative_to(checkout)): digest(path)
+        for path in sorted((checkout / "vllm").rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    }
+
+
+def verify_code(*, target_snapshot: Path | None = None) -> dict[str, dict]:
     configurations = {
         "target": (ROOT, None),
         "source": (SOURCE, SOURCE_REVISION),
@@ -159,11 +167,17 @@ def verify_code() -> dict[str, dict]:
             if name == "target"
             else git(checkout, "status", "--porcelain")
         )
-        if status:
+        if status and not (name == "target" and target_snapshot is not None):
             raise RuntimeError(f"Uncommitted executable changes in {name}: {status}")
         result[name] = {"commit": revision, "checkout": str(checkout)}
         if name != "mooncake_configuration":
             result[name]["runtime_tree"] = git(checkout, "rev-parse", "HEAD:vllm")
+        if name == "target" and target_snapshot is not None:
+            result[name].update(
+                checkout=str(target_snapshot),
+                runtime_tree=content_hash(runtime_manifest(target_snapshot)),
+                snapshot=True,
+            )
     return result
 
 
@@ -188,11 +202,28 @@ def carry_exclusions(previous: Path, identities: list[Identity]) -> list[dict]:
     return results
 
 
-def prepare(run_root: Path, *, prior_exclusions: Path | None = None) -> dict:
+def prepare(
+    run_root: Path,
+    *,
+    prior_exclusions: Path | None = None,
+    snapshot_target: bool = False,
+    cases: list[Case] | None = None,
+) -> dict:
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=False)
     write_json(run_root / "hardware.json", hardware_preflight())
-    code = verify_code()
+    target_snapshot = run_root / "runtime" if snapshot_target else None
+    if target_snapshot is not None:
+        shutil.copytree(
+            ROOT / "vllm",
+            target_snapshot / "vllm",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        write_json(
+            run_root / "runtime-manifest.json", runtime_manifest(target_snapshot)
+        )
+        (run_root / "runtime.patch").write_text(git(ROOT, "diff", "HEAD", "--", "vllm"))
+    code = verify_code(target_snapshot=target_snapshot)
     write_json(run_root / "code.json", code)
     original = json.loads(
         (
@@ -290,7 +321,10 @@ def prepare(run_root: Path, *, prior_exclusions: Path | None = None) -> dict:
         "configuration_commit": MOONCAKE_REVISION,
     }
     inherited = inherited_environment()
-    for queues in initial_queues().values():
+    queues_to_prepare = (
+        [[[case for case in cases]]] if cases is not None else initial_queues().values()
+    )
+    for queues in queues_to_prepare:
         for queue in queues:
             for case in queue:
                 role = (
@@ -320,7 +354,11 @@ def prepare(run_root: Path, *, prior_exclusions: Path | None = None) -> dict:
                     inputs,
                     content_hash(
                         {
-                            "server": server_command(case, 0)[:2],
+                            "server": server_command(
+                                case,
+                                0,
+                                target_checkout=Path(code["target"]["checkout"]),
+                            )[:2],
                             "inherited_environment": inherited,
                             "mooncake": mooncake if case.mode == "mooncake" else None,
                         }
@@ -340,6 +378,7 @@ def prepare(run_root: Path, *, prior_exclusions: Path | None = None) -> dict:
         )
         write_json(run_root / "prior-exclusions.json", ledger)
     frozen = {
+        "native_improvement": 0.25,
         "parameters": parameters,
         "code": code,
         "workload_sha256": workload["workload_sha256"],

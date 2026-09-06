@@ -255,7 +255,10 @@ class Runner:
                 raise RuntimeError(f"Frozen campaign input changed: {name}")
         if inherited_environment() != self.frozen["inherited_environment"]:
             raise RuntimeError("Inherited serving environment changed")
-        code = verify_code()
+        target = self.frozen["code"]["target"]
+        code = verify_code(
+            target_snapshot=Path(target["checkout"]) if target.get("snapshot") else None
+        )
         for role, recorded in self.frozen["code"].items():
             if role != "target" and code[role] != recorded:
                 raise RuntimeError(f"Frozen {role} code changed")
@@ -347,7 +350,11 @@ class Runner:
         case_dir = self.root / "cases" / case.name / f"launch-{launch}"
         case_dir.mkdir(parents=True, exist_ok=False)
         port = free_port(8055 + case.device.index)
-        command, environment, cwd = server_command(case, port)
+        command, environment, cwd = server_command(
+            case,
+            port,
+            target_checkout=Path(self.frozen["code"]["target"]["checkout"]),
+        )
         checkout = self.root / (
             "reference-launcher" if case.mode == "mooncake" else "launcher"
         )
@@ -591,6 +598,7 @@ class Runner:
             self.results,
             include_old=include_old,
             previously_triggered=self.triggered,
+            native_improvement=self.frozen.get("native_improvement", 0.10),
         )
         self.triggered.update(report["triggered_gates"])
         number = len(list(self.root.glob("reports/*.json")))
@@ -624,32 +632,65 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     planning = subparsers.add_parser("plan")
     planning.add_argument("--output", type=Path)
-    for command in ("prepare", "run", "report"):
+    for command in ("prepare", "run", "run-cases", "report"):
         subparser = subparsers.add_parser(command)
         subparser.add_argument("run_root", type=Path)
         if command == "prepare":
             subparser.add_argument("--prior-exclusions", type=Path)
+            subparser.add_argument("--snapshot-target", action="store_true")
+            subparser.add_argument(
+                "--mode", choices=("native", "agent", "offload-agent"), action="append"
+            )
+            subparser.add_argument(
+                "--qps", type=float, choices=(1.0, 0.5, 0.1), action="append"
+            )
+            subparser.add_argument("--gpu", type=int, choices=(0, 1))
     args = parser.parse_args()
     if args.command == "plan":
         result = plan()
         if args.output:
             write_json(args.output, result)
     elif args.command == "prepare":
-        result = prepare(args.run_root, prior_exclusions=args.prior_exclusions)
+        if (args.qps or args.gpu is not None) and not args.mode:
+            parser.error("--qps and --gpu require --mode")
+        cases = (
+            [
+                Case(mode, qps, gpu_index=args.gpu)
+                for mode in args.mode
+                for qps in sorted(args.qps or [1.0, 0.5, 0.1], reverse=True)
+            ]
+            if args.mode
+            else None
+        )
+        result = prepare(
+            args.run_root,
+            prior_exclusions=args.prior_exclusions,
+            snapshot_target=args.snapshot_target,
+            cases=cases,
+        )
     else:
         # Hold the ledger lock for reports too, so a live attempt cannot be
         # mistaken for an interrupted one by a concurrent invocation.
         with (args.run_root / "campaign.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             runner = Runner(args.run_root)
-            if args.command == "run":
+            if args.command in ("run", "run-cases"):
 
                 def interrupt(signum, frame):
                     runner.stop.set()
 
                 for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                     signal.signal(signum, interrupt)
-                result = runner.run()
+                if args.command == "run":
+                    result = runner.run()
+                else:
+                    runner.verify_frozen()
+                    runner.verify_inputs()
+                    queues: list[list[Case]] = [[], []]
+                    for identity in runner.identities:
+                        queues[identity.case.device.index].append(identity.case)
+                    runner.run_queues(queues, initial=True)
+                    result = {"results": runner.results}
             else:
                 result = runner.report(include_old=True)
     print(json.dumps(result, indent=2, sort_keys=True))

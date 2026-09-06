@@ -41,8 +41,11 @@ class Case:
     mode: Mode
     qps: float
     phase: str = "phase-1"
+    gpu_index: int | None = None
 
     def __post_init__(self) -> None:
+        if self.gpu_index is not None and self.gpu_index not in (0, 1):
+            raise ValueError("GPU index must be zero or one")
         if self.mode not in (
             "native",
             "agent",
@@ -60,11 +63,16 @@ class Case:
 
     @property
     def device(self) -> Device:
-        return DEVICES[int(self.mode in ("agent", "mooncake"))]
+        return DEVICES[
+            self.gpu_index
+            if self.gpu_index is not None
+            else int(self.mode in ("agent", "mooncake"))
+        ]
 
     @property
     def name(self) -> str:
-        return f"{self.phase}/{self.mode}/qps-{self.qps:.1f}"
+        suffix = "" if self.gpu_index is None else f"/gpu-{self.gpu_index}"
+        return f"{self.phase}/{self.mode}/qps-{self.qps:.1f}{suffix}"
 
     def payload(self) -> dict:
         return asdict(self) | {"device": asdict(self.device), "name": self.name}
@@ -97,11 +105,17 @@ def workload_parameters() -> dict:
     }
 
 
-def server_command(case: Case, port: int) -> tuple[list[str], dict[str, str], Path]:
+def server_command(
+    case: Case, port: int, *, target_checkout: Path = ROOT
+) -> tuple[list[str], dict[str, str], Path]:
     old = case.mode == "old-offload-agent"
     python = ROOT / (".venv/source/.venv/bin/python" if old else ".venv/bin/python")
     checkout = (
-        SOURCE if old else ROOT / ".venv/baseline" if case.mode == "native" else ROOT
+        SOURCE
+        if old
+        else ROOT / ".venv/baseline"
+        if case.mode == "native"
+        else target_checkout
     )
     command = ["taskset", "-c", case.device.cpus, str(python), "-m"]
     if old:

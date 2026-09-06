@@ -1,0 +1,266 @@
+{
+  "campaign_root": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired",
+  "frozen_sha256": "096d3933b411f8d8306c690332e3a2a6274d801debf9a460f60e05fe08995389",
+  "runtime_commit": "648289c5c57d1ec541bbfeb849eef2e1083e8a8f",
+  "artifact_sha256": "35e0d404fb0b8332990fa7865ba01df1ef88c1f92458843644794e38bc485c90",
+  "config_sha256": "e8f0f60c4fb39cf1c4c38ecb70b9c19b652eb0cc6b3d68a747e9889c4ce014f3",
+  "environment_sha256": "e46d61e54604ced537b8dfc0ab432621a50d02f083759c9ba83a92ba80e8aeb3",
+  "launcher_sha256": "d284747fb143f7c441a707c28fe4af21791f46c06dfce82b559e9dbdba96fb7c",
+  "workload_sha256": "52307fffdcf4aaa9535bdf85e6d1dc78d720afde1c236b11900bdb5aac3196e1",
+  "task": "8.2",
+  "task_complete": false,
+  "phase": "phase-1",
+  "mode": "offload-agent",
+  "qualifying_initial_cases": 2,
+  "excluded_initial_cases": 1,
+  "verified_artifacts": 45,
+  "complete_performance_acceptance": false,
+  "phase_two_triggered": false,
+  "results": [
+    {
+      "qps": 1,
+      "launch": 0,
+      "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/offload-agent/qps-1.0/launch-0/result.json",
+      "result_sha256": "61af58b6aa36c06943c78cb994f1392fa6b75eec96e48a251870e480aeb03514",
+      "identity_key": "ddece154a0383017b037dce1dbf7e85260e2261938d29d1f7ce7d5ceb2ae1240",
+      "qualifying": true,
+      "exclusion_reasons": [],
+      "eligible_for_gate": true,
+      "total_e2e_s": 6213.263328876346,
+      "p50_app_latency_s": 5197.198466181755,
+      "p95_app_latency_s": 6183.715612518788,
+      "completed_applications": 24,
+      "completed_nodes": 696,
+      "model_calls": 648,
+      "client_retries": 0,
+      "prompt_halvings": 0,
+      "finished_preempted_count": 0,
+      "native_preemptions": 15139,
+      "tokencake_preemptions": 15139,
+      "tokencake_deferrals": 81566,
+      "tokencake_prefill_caps": 245927,
+      "reported_prompt_tokens": 5390291,
+      "reported_generated_tokens": 271200,
+      "gpu_to_cpu_bytes": 4108320768,
+      "cpu_to_gpu_bytes": 11047796736,
+      "gpu_to_cpu_operations": 61,
+      "cpu_to_gpu_operations": 154,
+      "saved_gpu_blocks": 1306,
+      "transfer_failures": 0,
+      "monitor_samples": 2927,
+      "verified_artifacts": 15,
+      "primary_peer_sample_counts": {
+        "phase-1/agent/qps-0.5/launch-0": 2096,
+        "phase-1/agent/qps-1.0/launch-1": 771
+      }
+    },
+    {
+      "qps": 0.5,
+      "launch": 0,
+      "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/offload-agent/qps-0.5/launch-0/result.json",
+      "result_sha256": "181de3b7d713e429e8ed8362872a13bcf783441d2e16388bf5455313b0daff28",
+      "identity_key": "a78da479b523b3b9fdded0ad13b2f6418a7d6a4e0360a860a0544467ea3db210",
+      "qualifying": true,
+      "exclusion_reasons": [],
+      "eligible_for_gate": true,
+      "total_e2e_s": 5912.540754579008,
+      "p50_app_latency_s": 5336.368655562401,
+      "p95_app_latency_s": 5880.462773811817,
+      "completed_applications": 24,
+      "completed_nodes": 696,
+      "model_calls": 648,
+      "client_retries": 0,
+      "prompt_halvings": 0,
+      "finished_preempted_count": 0,
+      "native_preemptions": 14394,
+      "tokencake_preemptions": 14394,
+      "tokencake_deferrals": 73061,
+      "tokencake_prefill_caps": 227871,
+      "reported_prompt_tokens": 5392750,
+      "reported_generated_tokens": 271200,
+      "gpu_to_cpu_bytes": 1903165440,
+      "cpu_to_gpu_bytes": 13718519808,
+      "gpu_to_cpu_operations": 56,
+      "cpu_to_gpu_operations": 207,
+      "saved_gpu_blocks": 605,
+      "transfer_failures": 0,
+      "monitor_samples": 2771,
+      "verified_artifacts": 15,
+      "primary_peer_sample_counts": {
+        "phase-1/agent/qps-0.1/launch-0": 2336,
+        "phase-1/agent/qps-0.5/launch-0": 396
+      }
+    },
+    {
+      "qps": 0.1,
+      "launch": 0,
+      "result_path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/cases/phase-1/offload-agent/qps-0.1/launch-0/result.json",
+      "result_sha256": "63fe92a941ea7e1e594aec94e15dfca9e9eecba9c67344272a7b3f549e6bb661",
+      "identity_key": "6611582b1ade924edc913830830ef817d13931c73ee6217f504e91b520fb6aae",
+      "qualifying": false,
+      "exclusion_reasons": [
+        "affinity_violation"
+      ],
+      "eligible_for_gate": false,
+      "total_e2e_s": 4879.520334456116,
+      "p50_app_latency_s": 3550.981143593788,
+      "p95_app_latency_s": 4643.4979288935665,
+      "completed_applications": 24,
+      "completed_nodes": 696,
+      "model_calls": 648,
+      "client_retries": 0,
+      "prompt_halvings": 0,
+      "finished_preempted_count": 0,
+      "native_preemptions": 14294,
+      "tokencake_preemptions": 14294,
+      "tokencake_deferrals": 87135,
+      "tokencake_prefill_caps": 208547,
+      "reported_prompt_tokens": 5390190,
+      "reported_generated_tokens": 271200,
+      "gpu_to_cpu_bytes": 1749024768,
+      "cpu_to_gpu_bytes": 9550430208,
+      "gpu_to_cpu_operations": 48,
+      "cpu_to_gpu_operations": 167,
+      "saved_gpu_blocks": 556,
+      "transfer_failures": 0,
+      "monitor_samples": 2305,
+      "verified_artifacts": 15,
+      "primary_peer_sample_counts": {
+        "idle": 2243,
+        "phase-1/agent/qps-0.1/launch-0": 22
+      }
+    }
+  ],
+  "excluded_qps_0_1_affinity": {
+    "allowed_cpus": "0-35,72-107",
+    "observations": [
+      {
+        "cpus": [
+          113
+        ],
+        "matching_gpu_processes": [],
+        "monotonic": 17763523.90189084,
+        "pid": 525032,
+        "seconds_before_client_start": 1.8458481580018997,
+        "timestamp": 1788650255.7644722
+      }
+    ],
+    "primary_interval_affinity_violations": 0,
+    "descendant_command_known": false,
+    "exclusion_retained": true,
+    "launch_budget_charged": true
+  },
+  "initial_report": {
+    "path": "/root/autodl-tmp/tokencake-acceptance/phase-1-repaired/reports/0000.json",
+    "sha256": "2f39553bf61ccc4e8ea83fbd1cd60f3e45ae374cb87622f5f2a5003839e2227f",
+    "passed": false,
+    "gates": [
+      {
+        "qps": 1,
+        "reference_mode": "native",
+        "status": "unresolved",
+        "reason": "affected_pair_repetition",
+        "normalized_ratio": 4.559044064615227,
+        "maximum_ratio": 0.9
+      },
+      {
+        "qps": 1,
+        "reference_mode": "agent",
+        "status": "unresolved",
+        "reason": "affected_pair_repetition",
+        "normalized_ratio": 1.023886825258152,
+        "maximum_ratio": 1.05
+      },
+      {
+        "qps": 0.5,
+        "reference_mode": "native",
+        "status": "unresolved",
+        "reason": "affected_pair_repetition",
+        "normalized_ratio": 4.24585780221989,
+        "maximum_ratio": 0.9
+      },
+      {
+        "qps": 0.5,
+        "reference_mode": "agent",
+        "status": "unresolved",
+        "reason": "affected_pair_repetition",
+        "normalized_ratio": 1.0840594433955473,
+        "maximum_ratio": 1.05
+      },
+      {
+        "qps": 0.1,
+        "reference_mode": "native",
+        "status": "unresolved",
+        "reason": "missing_qualifying_result",
+        "normalized_ratio": null,
+        "maximum_ratio": 0.9
+      },
+      {
+        "qps": 0.1,
+        "reference_mode": "agent",
+        "status": "unresolved",
+        "reason": "missing_qualifying_result",
+        "normalized_ratio": null,
+        "maximum_ratio": 1.05
+      }
+    ],
+    "requested_additional_launches": [
+      {
+        "case": {
+          "mode": "offload-agent",
+          "phase": "phase-1",
+          "qps": 0.1
+        },
+        "count": 1
+      },
+      {
+        "case": {
+          "mode": "agent",
+          "phase": "phase-1",
+          "qps": 0.5
+        },
+        "count": 2
+      },
+      {
+        "case": {
+          "mode": "native",
+          "phase": "phase-1",
+          "qps": 1
+        },
+        "count": 1
+      },
+      {
+        "case": {
+          "mode": "native",
+          "phase": "phase-1",
+          "qps": 0.5
+        },
+        "count": 2
+      },
+      {
+        "case": {
+          "mode": "offload-agent",
+          "phase": "phase-1",
+          "qps": 0.5
+        },
+        "count": 2
+      },
+      {
+        "case": {
+          "mode": "agent",
+          "phase": "phase-1",
+          "qps": 1
+        },
+        "count": 1
+      },
+      {
+        "case": {
+          "mode": "offload-agent",
+          "phase": "phase-1",
+          "qps": 1
+        },
+        "count": 2
+      }
+    ]
+  }
+}

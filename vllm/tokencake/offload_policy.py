@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from vllm.tokencake.config import OffloadConfig
 from vllm.tokencake.metrics import Metric
 from vllm.tokencake.protocol import TokenCakeMetadata
+from vllm.v1.core.kv_cache_manager import KVCacheBlocks
 from vllm.v1.core.sched.interface import PauseState
 from vllm.v1.core.sched.request_queue import SchedulingPolicy
 from vllm.v1.request import RequestStatus
@@ -145,11 +146,7 @@ def waiting_pressure(
         )
         admission = demand
         if scheduler.scheduler_reserve_full_isl or controller is not None:
-            full_tokens = (
-                controller.admission_tokens(request)
-                if controller is not None
-                else min(request.num_tokens, scheduler.max_model_len)
-            )
+            full_tokens = min(request.num_tokens, scheduler.max_model_len)
             full_lookahead = (
                 controller.num_lookahead_tokens if controller is not None else 0
             )
@@ -163,6 +160,15 @@ def waiting_pressure(
                 apply_admission_cap=True,
             )
             admission = max(admission, full_demand)
+            if controller is not None:
+                # Do not credit the same reduction in completion headroom to
+                # several hypothetical admissions in this read-only forecast.
+                admission = max(
+                    admission,
+                    controller.admission_demand(
+                        request, computed, KVCacheBlocks(blocks), encoder_tokens
+                    ),
+                )
         if demand <= 0 or demand > free or admission > uncommitted:
             continue
         borrow_reserved = False

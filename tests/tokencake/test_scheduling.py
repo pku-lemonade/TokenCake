@@ -3,6 +3,8 @@
 
 import copy
 import json
+import random
+from collections import deque
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -24,6 +26,8 @@ from vllm.tokencake.scheduling import (
 from vllm.utils.hashing import sha256
 from vllm.v1.core.encoder_cache_manager import EncoderCacheManager
 from vllm.v1.core.kv_cache_utils import get_request_block_hasher
+from vllm.v1.core.sched.async_scheduler import AsyncScheduler
+from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.v1.core.sched.request_queue import SchedulingPolicy, create_request_queue
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.kv_cache_interface import KVCacheGroupSpec
@@ -37,6 +41,7 @@ def make_scheduler(
     policy="fcfs",
     groups=1,
     reserve_generation_tokens=False,
+    generation_reserve_mode="all",
     decode_prefill_token_budget=0,
     cache_affinity_score_band=500,
     inherit_join_priority=True,
@@ -59,6 +64,7 @@ def make_scheduler(
                     **(
                         {
                             "reserve_generation_tokens": reserve_generation_tokens,
+                            "generation_reserve_mode": generation_reserve_mode,
                             "decode_prefill_token_budget": decode_prefill_token_budget,
                             "cache_affinity_score_band": cache_affinity_score_band,
                             "inherit_join_priority": inherit_join_priority,
@@ -804,11 +810,181 @@ def test_generation_budget_is_not_double_counted_after_partial_output():
     assert controller.admission_tokens(request) == 96
 
 
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+@pytest.mark.parametrize("groups,blocks", [(1, 10), (2, 16)])
+@pytest.mark.parametrize("chunk_size", [16, 8192])
+def test_progress_headroom_admits_more_prefills_and_completes_every_request(
+    policy, groups, blocks, chunk_size
+):
+    scheduler = make_scheduler(
+        policy=policy,
+        groups=groups,
+        num_blocks=blocks,
+        max_num_batched_tokens=chunk_size,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
+    )
+    requests = [make_request(name, tokens=32) for name in ("first", "second")]
+    for request in requests:
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    controller = scheduler._tokencake_scheduling
+    assert controller._progress_reservation
+    concurrent = False
+    deferred = False
+    with patch("vllm.tokencake.scheduling.time.monotonic") as timer:
+        for step in range(160):
+            if all(r.is_finished() for r in requests):
+                break
+            timer.return_value = 1000.0 + step
+            output = scheduler.schedule()
+            assert output.num_scheduled_tokens, "Completion headroom must keep moving"
+            assert controller.uncommitted_blocks >= 0
+            concurrent |= len(scheduler.running) == 2
+            deferred |= any(
+                r.request_id not in output.num_scheduled_tokens
+                for r in scheduler.running
+            )
+            decode(scheduler, output, partial_prefills=True)
+    assert concurrent and deferred
+    assert all(r.is_finished() and r.num_output_tokens == 64 for r in requests)
+    assert all(not r.num_preemptions for r in requests)
+    assert not controller._prefill_growth and not controller._prefill_limits
+    assert controller.metrics.snapshot(0)["scheduling.generation_progress_deferred"] > 0
+    assert controller.metrics.snapshot(0)["max_critical_growth_wait_ms"] > 0
+    assert not controller._growth_wait_started
+
+
+def test_progress_headroom_remains_safe_when_the_finisher_is_aborted():
+    scheduler = make_scheduler(
+        num_blocks=10,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
+    )
+    first, second = (make_request(name) for name in ("first", "second"))
+    for request in (first, second):
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    for _ in range(20):
+        decode(scheduler, scheduler.schedule())
+    scheduler.finish_requests("first", RequestStatus.FINISHED_ABORTED)
+    for _ in range(80):
+        if second.is_finished():
+            break
+        output = scheduler.schedule()
+        assert output.num_scheduled_tokens
+        decode(scheduler, output)
+    assert second.is_finished() and second.num_output_tokens == 64
+    assert not second.num_preemptions
+
+
+@pytest.mark.parametrize("groups", [1, 2])
+@pytest.mark.parametrize("prefix_caching", [False, True])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_progress_headroom_completes_varied_lengths_and_shared_prefixes(
+    groups, prefix_caching, seed
+):
+    rng = random.Random(seed)
+    scheduler = make_scheduler(
+        groups=groups,
+        num_blocks=17 if groups == 1 else 25,
+        enable_prefix_caching=prefix_caching,
+        max_num_batched_tokens=64,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
+    )
+    requests = []
+    for index in range(10):
+        request = make_request(
+            str(index),
+            tokens=rng.choice([16, 32, 64, 96]),
+            importance=rng.randrange(10),
+            distinct_prompt=bool(index % 2),
+        )
+        request.max_tokens = rng.choice([16, 32, 64, 128])
+        requests.append(request)
+        scheduler.add_request(request)
+    for _ in range(1600):
+        if all(r.is_finished() for r in requests):
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert all(
+        r.is_finished() and r.num_output_tokens == r.max_tokens for r in requests
+    )
+    assert not scheduler._tokencake_scheduling._prefill_limits
+
+
+def test_progress_headroom_adopts_running_work_and_preserves_resume_input():
+    scheduler = make_scheduler(
+        num_blocks=13,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
+    )
+    ordinary = make_request("ordinary", importance=None)
+    ordinary.max_tokens = 64
+    scheduler.add_request(ordinary)
+    for _ in range(20):
+        decode(scheduler, scheduler.schedule())
+    annotated = make_request("annotated", distinct_prompt=True)
+    annotated.max_tokens = 64
+    scheduler.add_request(annotated)
+    decode(scheduler, scheduler.schedule())
+    scheduler.running.remove(annotated)
+    scheduler._preempt_request(annotated, 1001.0, physical=True)
+    scheduler.prev_step_scheduled_req_ids.discard("annotated")
+    for _ in range(160):
+        if ordinary.is_finished() and annotated.is_finished():
+            break
+        decode(scheduler, scheduler.schedule(), partial_prefills=True)
+    assert ordinary.is_finished() and annotated.is_finished()
+    assert ordinary.num_output_tokens == annotated.num_output_tokens == 64
+    assert not scheduler._tokencake_scheduling._prefill_limits
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+@pytest.mark.parametrize("prefix_caching", [False, True])
+def test_progress_headroom_preserves_async_inflight_outputs(policy, prefix_caching):
+    base = make_scheduler(
+        policy=policy,
+        num_blocks=10,
+        enable_prefix_caching=prefix_caching,
+        reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
+        async_scheduling=True,
+    )
+    scheduler = AsyncScheduler(
+        base.vllm_config,
+        base.kv_cache_config,
+        base.structured_output_manager,
+        base.cache_config.block_size,
+        log_stats=True,
+    )
+    requests = [make_request(name) for name in ("first", "second")]
+    for request in requests:
+        request.max_tokens = 64
+        scheduler.add_request(request)
+    pending: deque[SchedulerOutput] = deque()
+    for _ in range(160):
+        if all(r.is_finished() for r in requests):
+            break
+        output = scheduler.schedule()
+        if output.num_scheduled_tokens:
+            pending.append(output)
+        if len(pending) >= 2 or not output.num_scheduled_tokens:
+            assert pending, "A progress wait must leave a completion in flight"
+            decode(scheduler, pending.popleft())
+    assert not pending
+    assert all(r.is_finished() and r.num_output_tokens == 64 for r in requests)
+    assert all(not r.num_output_placeholders for r in requests)
+    assert all(not r.num_preemptions for r in requests)
+
+
 def test_generation_capacity_includes_native_speculative_lookahead():
     base = make_scheduler(
         num_blocks=14,
         num_speculative_tokens=8,
         reserve_generation_tokens=True,
+        generation_reserve_mode="progress",
     )
     # The shared ngram fixture reserves no lookahead; use draft-model semantics.
     with patch.object(
@@ -828,6 +1004,7 @@ def test_generation_capacity_includes_native_speculative_lookahead():
     assert scheduler.schedule().num_scheduled_tokens == {"first": 32}
     controller = scheduler._tokencake_scheduling
     assert controller.num_lookahead_tokens == scheduler.num_lookahead_tokens == 8
+    assert not controller._progress_reservation
     assert controller._growth_commitments["first"] == 5
     assert controller.uncommitted_blocks == 6
 

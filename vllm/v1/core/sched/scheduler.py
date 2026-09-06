@@ -508,10 +508,13 @@ class Scheduler(SchedulerInterface):
                 continue
 
             # Schedule newly needed KV blocks for the request.
+            if tokencake is not None:
+                tokencake.prepare_running(request)
+                if not tokencake.can_grow(request, num_new_tokens):
+                    req_index += 1
+                    continue
             with record_function_or_nullcontext("schedule: allocate_slots"):
                 while True:
-                    if tokencake is not None:
-                        tokencake.prepare_running(request)
                     new_blocks = self.kv_cache_manager.allocate_slots(
                         request,
                         num_new_tokens,

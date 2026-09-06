@@ -39,10 +39,24 @@ these components.
 
 Reservations prioritize new admissions. Requests that have already been admitted
 continue to grow, and subsequent admissions account for their remaining capacity
-commitments. By default, `scheduling.reserve_generation_tokens` commits the known
-input plus the declared generation budget; setting it to `false` commits only
-the known input. Both use the native multi-group capacity calculation and allocate
-KV incrementally. Large unused generation budgets can reduce concurrency.
+commitments. By default, `scheduling.reserve_generation_tokens` also guarantees
+space for generation to complete. Its `scheduling.generation_reserve_mode` defaults
+to `progress`: all admitted input growth is committed, together with enough
+generation capacity for at least one admitted request to finish. Other requests
+can extend their KV only while this completion guarantee remains affordable.
+Requests that temporarily wait retain their computed KV. If previously admitted
+native work already exceeds this bound, a concrete finisher can recover physical
+space through native preemption; displaced requests remain pending.
+
+The `all` mode commits every admitted request's declared generation budget.
+It is also the conservative fallback for speculative lookahead and cache groups
+other than full attention. Setting `reserve_generation_tokens` to `false` commits
+only known input. All modes use native multi-group capacity calculations and
+allocate KV incrementally. Large unused generation budgets can reduce concurrency
+in `all` mode. `generation_progress_deferred` counts temporary growth deferrals,
+separately from physical and reservation preemptions.
+The `tokencake_critical_growth_wait_max_seconds` gauge tracks the longest
+observed critical growth wait, including waits that are still in progress.
 
 After checking normal reservation eligibility in agent-score order, the scheduler
 can lend otherwise idle reservations to a waiting request that fits the remaining

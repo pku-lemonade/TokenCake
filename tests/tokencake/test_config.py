@@ -85,6 +85,7 @@ def test_temporal_selection(policy):
         {"offload": {"transfer": {"unknown": 1}}},
         {"scheduling": {"enabled": 1}},
         {"scheduling": {"reserve_generation_tokens": 1}},
+        {"scheduling": {"generation_reserve_mode": "unknown"}},
         {"scheduling": {"decode_prefill_token_budget": -1}},
         {"scheduling": {"decode_prefill_token_budget": True}},
         {"scheduling": {"cache_affinity_score_band": -1}},

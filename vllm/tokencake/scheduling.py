@@ -16,6 +16,7 @@ from vllm.tokencake.metrics import Metric, TokenCakeMetrics
 from vllm.tokencake.protocol import TokenCakeMetadata
 from vllm.v1.core.kv_cache_manager import KVCacheBlocks, KVCacheManager
 from vllm.v1.core.sched.request_queue import RequestQueue, SchedulingPolicy
+from vllm.v1.kv_cache_interface import FullAttentionSpec
 from vllm.v1.request import Request
 
 if TYPE_CHECKING:
@@ -154,6 +155,15 @@ class SchedulingController:
         self.num_lookahead_tokens = (
             num_lookahead_tokens if settings.reserve_generation_tokens else 0
         )
+        self._progress_reservation = (
+            settings.reserve_generation_tokens
+            and settings.generation_reserve_mode == "progress"
+            and not num_lookahead_tokens
+            and all(
+                type(group.kv_cache_spec) is FullAttentionSpec
+                for group in manager.kv_cache_config.kv_cache_groups
+            )
+        )
         self.metadata: dict[str, TokenCakeMetadata] = {}
         self.scores: dict[str, int] = {}
         self._agent_scores: dict[str, int] = {}
@@ -174,6 +184,9 @@ class SchedulingController:
         self._executed_ranges: dict[str, list[tuple[int, int]]] = {}
         self._admitted: dict[str, int] = {}
         self._growth_commitments: dict[str, int] = {}
+        self._prefill_limits: dict[str, int] = {}
+        self._prefill_growth: dict[str, int] = {}
+        self._growth_wait_started: dict[str, float] = {}
         self._retry_capacity: dict[str, tuple[int, int]] = {}
         self._queued_at: dict[str, float] = {}
         self._completion_epoch = 0
@@ -204,6 +217,9 @@ class SchedulingController:
             self._agent_scores.clear()
             self._admitted.clear()
             self._growth_commitments.clear()
+            self._prefill_limits.clear()
+            self._prefill_growth.clear()
+            self._growth_wait_started.clear()
             self._retry_capacity.clear()
             self._accounting_active = False
             return False
@@ -212,11 +228,18 @@ class SchedulingController:
         requests = [*waiting, *running]
         for request in running:
             self._admitted.setdefault(request.request_id, 0)
+            self._prefill_limits.setdefault(request.request_id, request.num_tokens)
         self._growth_commitments = {
             r.request_id: self._remaining_growth(r)
             for r in requests
             if r.request_id in self._admitted
         }
+        if self._progress_reservation:
+            self._prefill_growth = {
+                r.request_id: self._remaining_growth(r, input_only=True)
+                for r in requests
+                if r.request_id in self._admitted
+            }
         self._agent_scores = {
             r.request_id: request_score(
                 self.metadata[r.request_id], r.arrival_time, now
@@ -312,12 +335,32 @@ class SchedulingController:
 
     @property
     def uncommitted_blocks(self) -> int:
-        return self.manager.block_pool.get_num_free_blocks() - sum(
-            self._growth_commitments.values()
+        committed = (
+            sum(self._prefill_growth.values()) + self._generation_headroom
+            if self._progress_reservation
+            else sum(self._growth_commitments.values())
+        )
+        return self.manager.block_pool.get_num_free_blocks() - committed
+
+    @property
+    def _generation_headroom(self) -> int:
+        return min(
+            (
+                max(0, growth - self._prefill_growth.get(request_id, 0))
+                for request_id, growth in self._growth_commitments.items()
+            ),
+            default=0,
         )
 
-    def _remaining_growth(self, request: Request) -> int:
-        full_tokens = self.admission_tokens(request)
+    def _remaining_growth(self, request: Request, *, input_only: bool = False) -> int:
+        full_tokens = (
+            min(
+                self._prefill_limits.get(request.request_id, request.num_tokens),
+                self.manager.max_model_len,
+            )
+            if input_only
+            else self.admission_tokens(request)
+        )
         if request.num_computed_tokens >= full_tokens:
             return 0
         return self.manager.coordinator.get_num_blocks_to_allocate(
@@ -331,6 +374,96 @@ class SchedulingController:
             num_tokens_main_model=full_tokens,
             apply_admission_cap=True,
         )
+
+    def admission_demand(
+        self,
+        request: Request,
+        computed: int,
+        blocks: KVCacheBlocks,
+        num_encoder_tokens: int = 0,
+    ) -> int:
+        def required(tokens: int) -> int:
+            return self.manager.coordinator.get_num_blocks_to_allocate(
+                request_id=request.request_id,
+                num_tokens=min(
+                    tokens + self.num_lookahead_tokens, self.manager.max_model_len
+                ),
+                new_computed_blocks=blocks.blocks,
+                num_encoder_tokens=num_encoder_tokens,
+                total_computed_tokens=computed,
+                num_tokens_main_model=tokens,
+                apply_admission_cap=True,
+            )
+
+        full = required(self.admission_tokens(request))
+        if not self._progress_reservation:
+            return full
+        inputs = required(min(request.num_tokens, self.manager.max_model_len))
+        headroom = max(0, full - inputs)
+        if self._growth_commitments:
+            previous = self._generation_headroom
+            headroom = min(previous, headroom) - previous
+        return max(0, inputs + headroom)
+
+    def can_grow(self, request: Request, num_new_tokens: int) -> bool:
+        if not self._progress_reservation:
+            return True
+        main_tokens = request.num_computed_tokens + num_new_tokens
+        demand = self.manager.coordinator.get_num_blocks_to_allocate(
+            request_id=request.request_id,
+            num_tokens=main_tokens,
+            new_computed_blocks=self.manager.empty_kv_cache_blocks.blocks,
+            num_encoder_tokens=0,
+            total_computed_tokens=request.num_computed_tokens,
+            num_tokens_main_model=main_tokens,
+        )
+        if demand == 0:
+            return self._record_growth_wait(request, True)
+        available = self.uncommitted_blocks
+        if available < 0:
+            # Adopted native work may already exceed the progress commitment.
+            # Let a concrete finisher recover space through native preemption.
+            beneficiary = min(
+                self._growth_commitments,
+                key=lambda key: (
+                    self._growth_commitments[key],
+                    -self.scores.get(key, 0),
+                    key,
+                ),
+            )
+            allowed = request.request_id == beneficiary
+        else:
+            inputs = self._prefill_growth.get(request.request_id, 0)
+            remaining_headroom = min(
+                max(0, growth - (demand if key == request.request_id else 0))
+                - max(
+                    0,
+                    self._prefill_growth.get(key, 0)
+                    - (demand if key == request.request_id else 0),
+                )
+                for key, growth in self._growth_commitments.items()
+            )
+            released = (
+                min(demand, inputs) + self._generation_headroom - remaining_headroom
+            )
+            allowed = demand <= available + released
+        return self._record_growth_wait(request, allowed)
+
+    def _record_growth_wait(self, request: Request, allowed: bool) -> bool:
+        if allowed:
+            started = self._growth_wait_started.pop(request.request_id, None)
+        else:
+            self.metrics.count(Metric.GENERATION_PROGRESS_DEFERRED)
+            started = self._growth_wait_started.setdefault(
+                request.request_id, time.monotonic()
+            )
+        if started is not None:
+            metadata = self.metadata.get(request.request_id)
+            if metadata is not None and (
+                metadata.critical_path or metadata.agent_type in self.plan.critical
+            ):
+                self.metrics.growth_wait(max(0, time.monotonic() - started))
+        return allowed
 
     def release(self) -> None:
         if not self._accounting_active:
@@ -464,19 +597,11 @@ class SchedulingController:
             total_computed_tokens=computed,
             num_tokens_main_model=main_tokens,
         )
-        full_tokens = self.admission_tokens(request)
-        full_demand = self.manager.coordinator.get_num_blocks_to_allocate(
-            request_id=request.request_id,
-            num_tokens=min(
-                full_tokens + self.num_lookahead_tokens, self.manager.max_model_len
-            ),
-            new_computed_blocks=(
-                new_computed_blocks or self.manager.empty_kv_cache_blocks
-            ).blocks,
-            num_encoder_tokens=num_encoder_tokens,
-            total_computed_tokens=computed,
-            num_tokens_main_model=full_tokens,
-            apply_admission_cap=True,
+        full_demand = self.admission_demand(
+            request,
+            computed,
+            new_computed_blocks or self.manager.empty_kv_cache_blocks,
+            num_encoder_tokens,
         )
         demand = max(demand, full_demand)
         available = self.uncommitted_blocks
@@ -559,7 +684,12 @@ class SchedulingController:
         self._admitted[request.request_id] = max(
             self._admitted.get(request.request_id, 0), num_encoder_tokens
         )
+        self._prefill_limits.setdefault(request.request_id, request.num_tokens)
         self._growth_commitments[request.request_id] = self._remaining_growth(request)
+        if self._progress_reservation:
+            self._prefill_growth[request.request_id] = self._remaining_growth(
+                request, input_only=True
+            )
         self._retry_capacity.pop(request.request_id, None)
         self.reservation_deferred.discard(request.request_id)
         if borrow_reserved and not running:
@@ -606,8 +736,11 @@ class SchedulingController:
             self._history(metadata.agent_type).deferrals += 1
 
     def preempt(self, request: Request, *, physical: bool = False) -> None:
+        self._record_growth_wait(request, True)
         self._admitted.pop(request.request_id, None)
         self._growth_commitments.pop(request.request_id, None)
+        self._prefill_limits.pop(request.request_id, None)
+        self._prefill_growth.pop(request.request_id, None)
         self.release()
         self.metrics.count(Metric.PREEMPTED)
         if physical:
@@ -622,9 +755,12 @@ class SchedulingController:
             self._history(metadata.agent_type).preemptions += 1
 
     def finish(self, request: Request) -> None:
+        self._record_growth_wait(request, True)
         was_admitted = request.request_id in self._admitted
         self._admitted.pop(request.request_id, None)
         self._growth_commitments.pop(request.request_id, None)
+        self._prefill_limits.pop(request.request_id, None)
+        self._prefill_growth.pop(request.request_id, None)
         self._retry_capacity.pop(request.request_id, None)
         self._queued_at.pop(request.request_id, None)
         if was_admitted:
@@ -729,18 +865,7 @@ class SchedulingController:
         )
         if not shared:
             return 0.0, 0
-        full_tokens = self.admission_tokens(request)
-        demand = self.manager.coordinator.get_num_blocks_to_allocate(
-            request_id=request.request_id,
-            num_tokens=min(
-                full_tokens + self.num_lookahead_tokens, self.manager.max_model_len
-            ),
-            new_computed_blocks=blocks,
-            num_encoder_tokens=0,
-            total_computed_tokens=computed,
-            num_tokens_main_model=full_tokens,
-            apply_admission_cap=True,
-        )
+        demand = self.admission_demand(request, computed, KVCacheBlocks(blocks))
         if shared < demand:
             return 0.0, 0
         return shared / max(1, shared + demand), shared

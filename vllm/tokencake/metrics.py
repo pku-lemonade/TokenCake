@@ -42,6 +42,7 @@ class Metric(str, Enum):
     RESERVATION_DENIED = "scheduling.reservation_denied"
     PREFILL_CAPACITY_DENIED = "scheduling.prefill_capacity_denied"
     GENERATION_CAPACITY_DENIED = "scheduling.generation_capacity_denied"
+    GENERATION_PROGRESS_DEFERRED = "scheduling.generation_progress_deferred"
     RESUME_DEFERRED = "scheduling.resume_deferred"
     ADMITTED = "scheduling.admitted"
     WORK_CONSERVING_ADMITTED = "scheduling.work_conserving_admitted"
@@ -65,6 +66,12 @@ class TokenCakeMetrics:
     def __init__(self) -> None:
         self._counters = dict.fromkeys(Metric, 0)
         self._max_critical_wait_ms = 0
+        self._max_critical_growth_wait_ms = 0
+
+    def growth_wait(self, seconds: float) -> None:
+        self._max_critical_growth_wait_ms = max(
+            self._max_critical_growth_wait_ms, int(seconds * 1000)
+        )
 
     def admission_wait(self, seconds: float, *, critical: bool) -> None:
         self.count(Metric.ADMITTED)
@@ -86,6 +93,7 @@ class TokenCakeMetrics:
         return {metric.value: value for metric, value in self._counters.items()} | {
             "active": active,
             "max_critical_wait_ms": self._max_critical_wait_ms,
+            "max_critical_growth_wait_ms": self._max_critical_growth_wait_ms,
         }
 
 
@@ -121,6 +129,13 @@ class TokenCakeProm:
             multiprocess_mode="mostrecent",
         )
         self._wait = {i: wait.labels(str(i)) for i in engine_indexes}
+        growth_wait = prometheus_client.Gauge(
+            "vllm:tokencake_critical_growth_wait_max_seconds",
+            "Maximum observed critical request KV growth wait since server start.",
+            labelnames=["engine"],
+            multiprocess_mode="mostrecent",
+        )
+        self._growth_wait = {i: growth_wait.labels(str(i)) for i in engine_indexes}
 
     def observe(self, values: dict[str, int], engine_idx: int) -> None:
         previous = self._previous[engine_idx]
@@ -131,4 +146,7 @@ class TokenCakeProm:
             self._counters[engine_idx, metric.value].inc(delta)
         self._active[engine_idx].set(values["active"])
         self._wait[engine_idx].set(values.get("max_critical_wait_ms", 0) / 1000)
+        self._growth_wait[engine_idx].set(
+            values.get("max_critical_growth_wait_ms", 0) / 1000
+        )
         self._previous[engine_idx] = values

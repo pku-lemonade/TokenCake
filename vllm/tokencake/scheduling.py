@@ -347,6 +347,18 @@ class SchedulingController:
         if free != self.manager.block_pool.get_num_free_blocks():
             self.release()
 
+    def prefill_budget(self, running: list[Request], native_budget: int) -> int:
+        limit = self.settings.decode_prefill_token_budget
+        if limit and any(r.num_computed_tokens >= r.num_prompt_tokens for r in running):
+            return min(native_budget, limit)
+        return native_budget
+
+    def cap_prefill(self, tokens: int, budget: int) -> int:
+        if tokens > budget:
+            self.metrics.count(Metric.PREFILL_CAPPED)
+            return budget
+        return tokens
+
     def _consumption(
         self, request: Request, demand: int, *, borrow_reserved: bool = False
     ) -> list[tuple[str | None, int]] | None:

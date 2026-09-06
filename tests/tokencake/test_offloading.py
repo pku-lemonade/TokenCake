@@ -50,10 +50,11 @@ def make_offload_scheduler(
     settings=None,
     cache_policy="lru",
     async_scheduling=False,
+    max_num_batched_tokens=512,
 ):
     base = create_scheduler(
         num_blocks=gpu_blocks,
-        max_num_batched_tokens=512,
+        max_num_batched_tokens=max_num_batched_tokens,
         enable_prefix_caching=True,
         async_scheduling=async_scheduling,
     )
@@ -513,6 +514,22 @@ def test_waiting_pressure_accounts_for_borrowing_without_overcommitting():
     assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 7
     assert controller.metrics.snapshot(2) == before
     assert not controller.charges and not controller.reservation_deferred
+
+
+def test_waiting_pressure_uses_decode_prefill_budget():
+    scheduler = make_offload_scheduler(
+        gpu_blocks=1025, scheduling=True, max_num_batched_tokens=8192
+    )
+    scheduler.add_request(request_for("decoder"))
+    scheduler.schedule()
+    scheduler.add_request(request_for("waiting", tokens=1536, value=1))
+    controller = scheduler._tokencake_scheduling
+    controller.begin_step(scheduler.waiting, scheduler.running)
+    before = controller.metrics.snapshot(2)
+    free = scheduler.kv_cache_manager.block_pool.get_num_free_blocks()
+    assert waiting_pressure(scheduler, 128, "first_fit").fit_demand == 64
+    assert controller.metrics.snapshot(2) == before
+    assert scheduler.kv_cache_manager.block_pool.get_num_free_blocks() == free
 
 
 def test_ordinary_store_progress_and_completion_delegate_to_native_connector():

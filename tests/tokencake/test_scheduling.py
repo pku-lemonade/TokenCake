@@ -30,7 +30,13 @@ from vllm.v1.request import RequestStatus
 
 
 def make_scheduler(
-    *, enabled=True, policy="fcfs", groups=1, reserve_generation_tokens=False, **kwargs
+    *,
+    enabled=True,
+    policy="fcfs",
+    groups=1,
+    reserve_generation_tokens=False,
+    decode_prefill_token_budget=1024,
+    **kwargs,
 ):
     base = create_scheduler(**kwargs)
     config = replace(
@@ -46,7 +52,10 @@ def make_scheduler(
                 "scheduling": {
                     "enabled": enabled,
                     **(
-                        {"reserve_generation_tokens": reserve_generation_tokens}
+                        {
+                            "reserve_generation_tokens": reserve_generation_tokens,
+                            "decode_prefill_token_budget": decode_prefill_token_budget,
+                        }
                         if enabled
                         else {}
                     ),
@@ -92,14 +101,21 @@ def make_request(name, *, importance=0.0, agent_type="agent", tokens=32, priorit
     return request
 
 
-def decode(scheduler, output):
+def decode(scheduler, output, *, partial_prefills=False):
     ids = list(output.num_scheduled_tokens)
     scheduler.update_from_output(
         output,
         ModelRunnerOutput(
             req_ids=ids,
             req_id_to_index={key: i for i, key in enumerate(ids)},
-            sampled_token_ids=[[100] for _ in ids],
+            sampled_token_ids=[
+                []
+                if partial_prefills
+                and scheduler.requests[key].num_computed_tokens
+                < scheduler.requests[key].num_prompt_tokens
+                else [100]
+                for key in ids
+            ],
             logprobs=None,
             prompt_logprobs_dict={},
             pooler_output=[],
@@ -213,6 +229,84 @@ def test_prefill_preserves_native_clamps(enabled, annotated, threshold):
     output = scheduler.schedule()
     assert output.num_scheduled_tokens["long"] == threshold
     assert request.status == RequestStatus.RUNNING
+
+
+@pytest.mark.parametrize("policy", ["fcfs", "priority"])
+def test_decode_pressure_bounds_prefill_batch_and_releases_native_budget(policy):
+    scheduler = make_scheduler(
+        policy=policy, max_num_batched_tokens=2048, decode_prefill_token_budget=512
+    )
+    decoder = make_request("decoder")
+    scheduler.add_request(decoder)
+    decode(scheduler, scheduler.schedule())
+    for name in ("first", "second"):
+        scheduler.add_request(make_request(name, tokens=1536))
+    first = scheduler.schedule()
+    assert first.num_scheduled_tokens == {"decoder": 1, "first": 512}
+    decode(scheduler, first, partial_prefills=True)
+    scheduler.running.reverse()
+    second = scheduler.schedule()
+    assert second.num_scheduled_tokens == {"first": 512, "decoder": 1}
+    decode(scheduler, second, partial_prefills=True)
+    scheduler.finish_requests("decoder", RequestStatus.FINISHED_STOPPED)
+    released = scheduler.schedule()
+    assert released.num_scheduled_tokens == {"first": 512, "second": 1536}
+    assert (
+        scheduler._tokencake_scheduling.metrics.snapshot(0)["scheduling.prefill_capped"]
+        > 0
+    )
+
+
+@pytest.mark.parametrize("ordinary", [False, True])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_decode_pressure_keeps_ordinary_and_disabled_prefill_native(ordinary, enabled):
+    scheduler = make_scheduler(enabled=enabled, decode_prefill_token_budget=0)
+    if ordinary:
+        scheduler = make_scheduler(enabled=enabled)
+    scheduler.add_request(make_request("decoder"))
+    decode(scheduler, scheduler.schedule())
+    scheduler.add_request(
+        make_request("prefill", tokens=1536, importance=None if ordinary else 1)
+    )
+    assert scheduler.schedule().num_scheduled_tokens["prefill"] == 1536
+
+
+def test_decode_pressure_preserves_nonchunked_prefill():
+    scheduler = make_scheduler(enable_chunked_prefill=False)
+    scheduler.add_request(make_request("decoder"))
+    decode(scheduler, scheduler.schedule())
+    scheduler.add_request(make_request("prefill", tokens=1536))
+    assert scheduler.schedule().num_scheduled_tokens["prefill"] == 1536
+
+
+def test_preempted_partial_prefill_restores_decode_pressure_budget():
+    scheduler = make_scheduler(
+        num_blocks=7, max_num_batched_tokens=64, decode_prefill_token_budget=32
+    )
+    low = make_request("low", tokens=64)
+    high = make_request("high", tokens=32, importance=100)
+    following = make_request("following", tokens=64, importance=100)
+    high.append_output_token_ids([100])
+    for request, allocated, computed in [
+        (low, 48, 16),
+        (high, 32, 32),
+        (following, 16, 0),
+    ]:
+        scheduler.add_request(request)
+        scheduler.waiting.remove_request(request)
+        scheduler.running.append(request)
+        request.status = RequestStatus.RUNNING
+        assert scheduler.kv_cache_manager.allocate_slots(request, allocated) is not None
+        request.num_computed_tokens = computed
+    output = scheduler.schedule()
+    assert low.status == RequestStatus.PREEMPTED and low in scheduler.waiting
+    assert output.num_scheduled_tokens == {"high": 1, "following": 32}
+    assert (
+        scheduler._tokencake_scheduling.metrics.snapshot(0)[
+            "scheduling.physical_preempted"
+        ]
+        == 1
+    )
 
 
 @pytest.mark.parametrize("groups,expected", [(1, 2), (2, 3)])

@@ -49,6 +49,12 @@ can lend otherwise idle reservations to a waiting request that fits the remainin
 physical and committed capacity. It still checks full demand before admitting a
 borrower. A preempted generation remains pending and resumes to completion.
 
+When decode requests are running, `scheduling.decode_prefill_token_budget` limits
+the total annotated prefill work per step (1024 tokens by default). Pure prefill
+uses the native token budget. Setting this value to zero disables the additional
+limit. Encoder inputs, non-chunked prefill, and Mamba block alignment retain their
+native scheduling rules.
+
 ## Request metadata
 
 Generate a fresh ID of the form `tc-` followed by lowercase UUID4 hex for every

@@ -26,6 +26,8 @@ class SchedulingConfig:
     """Enable agent-aware scheduling."""
     reserve_generation_tokens: StrictBool = True
     """Commit the declared generation budget as logical admission capacity."""
+    decode_prefill_token_budget: Annotated[StrictInt, Field(ge=0)] = 1024
+    """Per-step prefill budget during decode; zero keeps the native budget."""
     temporal_selection: TemporalSelection = "first_fit"
     """Selection order for eligible preservation windows."""
     critical_ratio: PositiveRatio = 0.75

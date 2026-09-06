@@ -32,7 +32,14 @@ def pressure_server(request):
         request.param,
         "--no-scheduler-reserve-full-isl",
         "--additional-config",
-        json.dumps({"tokencake": {"offload": {"enabled": False}}}),
+        json.dumps(
+            {
+                "tokencake": {
+                    "scheduling": {"decode_prefill_token_budget": 512},
+                    "offload": {"enabled": False},
+                }
+            }
+        ),
     ]
     with LocalPythonServer(MODEL, args) as server:
         yield server
@@ -92,7 +99,7 @@ def test_mixed_contended_generation_and_recovery(pressure_server):
         after = client.get(pressure_server.url_for("metrics")).text
         assert metric_value(
             after, "vllm:tokencake_scheduling_total", outcome="prefill_capped"
-        ) == metric_value(
+        ) > metric_value(
             before, "vllm:tokencake_scheduling_total", outcome="prefill_capped"
         )
         assert (

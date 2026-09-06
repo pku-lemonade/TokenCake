@@ -405,6 +405,12 @@ class Scheduler(SchedulerInterface):
             itertools.chain(self.skipped_waiting, self.waiting), self.running
         ):
             tokencake = None
+        prefill_budget = (
+            tokencake.prefill_budget(self.running, token_budget)
+            if tokencake is not None
+            else token_budget
+        )
+        scheduled_prefill_tokens: dict[str, int] = {}
         if self._tokencake_connector is not None:
             offload = self._tokencake_connector.tokencake_scheduler
             offload.evaluate_pending(self, new_step=True)
@@ -441,6 +447,19 @@ class Scheduler(SchedulerInterface):
             if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
                 num_new_tokens = self.scheduler_config.long_prefill_token_threshold
             num_new_tokens = min(num_new_tokens, token_budget)
+
+            limited_prefill = (
+                tokencake is not None
+                and request.request_id in tokencake.metadata
+                and request.num_computed_tokens < request.num_prompt_tokens
+                and num_new_tokens > 1
+                and self.scheduler_config.enable_chunked_prefill
+                and not request.has_encoder_inputs
+                and not self.need_mamba_block_aligned_split
+            )
+            if limited_prefill:
+                assert tokencake is not None
+                num_new_tokens = tokencake.cap_prefill(num_new_tokens, prefill_budget)
 
             # Make sure the input position does not exceed the max model len.
             # This is necessary when using spec decoding.
@@ -536,6 +555,9 @@ class Scheduler(SchedulerInterface):
                             preempted_req_id = preempted_req.request_id
                             scheduled_running_reqs.remove(preempted_req)
                             token_budget += num_scheduled_tokens.pop(preempted_req_id)
+                            prefill_budget += scheduled_prefill_tokens.pop(
+                                preempted_req_id, 0
+                            )
                             req_to_new_blocks.pop(preempted_req_id)
                             scheduled_spec_decode_tokens.pop(preempted_req_id, None)
                             preempted_encoder_inputs = scheduled_encoder_inputs.pop(
@@ -575,6 +597,9 @@ class Scheduler(SchedulerInterface):
             req_to_new_blocks[request_id] = new_blocks
             num_scheduled_tokens[request_id] = num_new_tokens
             token_budget -= num_new_tokens
+            if limited_prefill:
+                scheduled_prefill_tokens[request_id] = num_new_tokens
+                prefill_budget -= num_new_tokens
             req_index += 1
 
             # Speculative decode related.
@@ -801,6 +826,7 @@ class Scheduler(SchedulerInterface):
                     # KVTransfer: loading remote KV, do not allocate for new work.
                     assert num_external_computed_tokens > 0
                     num_new_tokens = 0
+                    limited_prefill = False
                 else:
                     # Number of tokens to be scheduled.
                     # We use `request.num_tokens` instead of
@@ -823,6 +849,23 @@ class Scheduler(SchedulerInterface):
 
                     num_new_tokens = min(num_new_tokens, token_budget)
                     assert num_new_tokens > 0
+                    limited_prefill = (
+                        tokencake is not None
+                        and request_id in tokencake.metadata
+                        and num_new_tokens > 1
+                        and self.scheduler_config.enable_chunked_prefill
+                        and not request.has_encoder_inputs
+                        and not self.need_mamba_block_aligned_split
+                    )
+                    if limited_prefill:
+                        assert tokencake is not None
+                        num_new_tokens = tokencake.cap_prefill(
+                            num_new_tokens, prefill_budget
+                        )
+                        if num_new_tokens == 0:
+                            request_queue.remove_request(request)
+                            step_skipped_waiting.prepend_request(request)
+                            continue
 
                     # Schedule encoder inputs.
                     if request.has_encoder_inputs:
@@ -990,6 +1033,8 @@ class Scheduler(SchedulerInterface):
                 )
                 num_scheduled_tokens[request_id] = num_new_tokens
                 token_budget -= num_new_tokens
+                if limited_prefill:
+                    prefill_budget -= num_new_tokens
                 request.status = RequestStatus.RUNNING
                 request.num_computed_tokens = num_computed_tokens
                 # Encoder-related.

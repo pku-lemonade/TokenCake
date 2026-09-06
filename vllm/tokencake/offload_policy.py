@@ -58,6 +58,13 @@ def waiting_pressure(
     waiting_demand = 0
     critical_demand = 0
     candidates = []
+    token_budget = scheduler.max_num_scheduled_tokens
+    if (
+        controller is not None
+        and scheduler.scheduler_config.enable_chunked_prefill
+        and not scheduler.need_mamba_block_aligned_split
+    ):
+        token_budget = controller.prefill_budget(scheduler.running, token_budget)
     group_block_sizes = [m.block_size for m in manager.coordinator.single_type_managers]
     loras = {r.lora_request.lora_int_id for r in scheduler.running if r.lora_request}
     for request in waiting:
@@ -90,7 +97,12 @@ def waiting_pressure(
         threshold = scheduler.scheduler_config.long_prefill_token_threshold
         if threshold > 0:
             tokens = min(tokens, threshold)
-        budget = scheduler.max_num_scheduled_tokens
+        limited_prefill = (
+            controller is not None
+            and request.request_id in controller.metadata
+            and not request.has_encoder_inputs
+        )
+        budget = token_budget if limited_prefill else scheduler.max_num_scheduled_tokens
         if not scheduler.scheduler_config.enable_chunked_prefill and tokens > budget:
             continue
         tokens = min(tokens, budget, scheduler.max_model_len - computed)
@@ -169,7 +181,17 @@ def waiting_pressure(
             if controller is not None
             else -request.priority
         )
-        candidates.append((request, demand, tokens, score, admission, borrow_reserved))
+        candidates.append(
+            (
+                request,
+                demand,
+                tokens,
+                score,
+                admission,
+                borrow_reserved,
+                limited_prefill,
+            )
+        )
     if temporal_selection == "priority_first":
         candidates.sort(key=lambda c: (c[3], c[1], -c[0].arrival_time), reverse=True)
     elif temporal_selection == "best_fit":
@@ -181,21 +203,25 @@ def waiting_pressure(
     remaining_blocks = free
     remaining_commitment = uncommitted
     remaining_tokens = scheduler.max_num_scheduled_tokens
+    remaining_prefill = token_budget
     fit = 0
     if scheduler.pause_state == PauseState.UNPAUSED:
-        for _, demand, tokens, _, admission, _ in candidates:
+        for _, demand, tokens, _, admission, _, limited_prefill in candidates:
             if slots <= 0:
                 break
             if (
                 demand > remaining_blocks
                 or admission > remaining_commitment
                 or tokens > remaining_tokens
+                or (limited_prefill and tokens > 1 and tokens > remaining_prefill)
             ):
                 continue
             slots -= 1
             remaining_blocks -= demand
             remaining_commitment -= admission
             remaining_tokens -= tokens
+            if limited_prefill and tokens > 1:
+                remaining_prefill -= tokens
             fit += demand
     return Pressure(
         manager.usage,

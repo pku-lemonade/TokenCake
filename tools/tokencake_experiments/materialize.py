@@ -11,7 +11,12 @@ from pathlib import Path
 SOURCE_REVISION = "7a608a4e53ea990b2540c93b4d28cb795b905109"
 PATCH = Path(__file__).with_name("launcher.patch")
 CONTINUATION_PATCH = Path(__file__).with_name("continuation.patch")
-WORKLOAD_PROFILES = ("frozen", "continuation")
+CONVERSATION_PATCH = Path(__file__).with_name("conversation.patch")
+WORKLOAD_PATCHES = {
+    "continuation": CONTINUATION_PATCH,
+    "conversation": CONVERSATION_PATCH,
+}
+WORKLOAD_PROFILES = ("frozen", *WORKLOAD_PATCHES)
 HELPERS = (
     "vllm_serving.py",
     "agent",
@@ -88,12 +93,13 @@ def materialize(
     if patched:
         git(destination, "apply", "--check", "--recount", "--unidiff-zero", str(PATCH))
         git(destination, "apply", "--recount", "--unidiff-zero", str(PATCH))
-    if workload_profile == "continuation":
-        git(destination, "apply", "--check", "--recount", str(CONTINUATION_PATCH))
-        git(destination, "apply", "--recount", str(CONTINUATION_PATCH))
+    workload_patch = WORKLOAD_PATCHES.get(workload_profile)
+    if workload_patch is not None:
+        git(destination, "apply", "--check", "--recount", str(workload_patch))
+        git(destination, "apply", "--recount", str(workload_patch))
     modified = git(destination, "diff", "--name-only").splitlines()
     expected = {"vllm_serving.py"} if patched else set()
-    if workload_profile == "continuation":
+    if workload_patch is not None:
         expected.update(("vllm_serving.py", "agent/app/code_writer_paper_pressure.py"))
     if set(modified) != expected:
         raise RuntimeError(f"Unexpected launcher changes: {modified}")
@@ -106,7 +112,7 @@ def materialize(
         "patch_sha256": digest(PATCH) if patched else None,
         "workload_profile": workload_profile,
         "workload_patch_sha256": (
-            digest(CONTINUATION_PATCH) if workload_profile == "continuation" else None
+            digest(workload_patch) if workload_patch is not None else None
         ),
         "source_helpers": original,
         "materialized_helpers": {name: digest(destination / name) for name in original},

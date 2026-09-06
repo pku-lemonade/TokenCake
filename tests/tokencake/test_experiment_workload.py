@@ -14,15 +14,16 @@ from tools.tokencake_experiments.campaign import ROOT, SOURCE
 from tools.tokencake_experiments.materialize import git, materialize
 
 
-def test_continuation_profile_is_frozen_and_runs_the_complete_dag(tmp_path):
+@pytest.mark.parametrize("profile", ["continuation", "conversation"])
+def test_revised_profile_is_frozen_and_runs_the_complete_dag(tmp_path, profile):
     if not SOURCE.exists():
         pytest.skip("Requires the frozen source checkout")
-    target = materialize(SOURCE, tmp_path / "target", workload_profile="continuation")
+    target = materialize(SOURCE, tmp_path / "target", workload_profile=profile)
     reference = materialize(
-        SOURCE, tmp_path / "reference", patched=False, workload_profile="continuation"
+        SOURCE, tmp_path / "reference", patched=False, workload_profile=profile
     )
     assert target["workload_patch_sha256"] == reference["workload_patch_sha256"]
-    assert target["workload_profile"] == reference["workload_profile"] == "continuation"
+    assert target["workload_profile"] == reference["workload_profile"] == profile
     name = "agent/app/code_writer_paper_pressure.py"
     assert (
         target["materialized_helpers"][name] == reference["materialized_helpers"][name]
@@ -34,6 +35,7 @@ def test_continuation_profile_is_frozen_and_runs_the_complete_dag(tmp_path):
             sys.executable,
             str(Path(__file__).with_name("experiment_workload_probe.py")),
             target["checkout"],
+            profile,
         ],
         cwd=ROOT,
         env=os.environ | {"CUDA_VISIBLE_DEVICES": "", "PYTHONPATH": str(ROOT)},

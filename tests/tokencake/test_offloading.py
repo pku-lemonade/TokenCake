@@ -427,6 +427,35 @@ def test_window_can_preserve_and_restore_more_than_32_gpu_blocks(groups, factor)
     assert matched == 640 and asynchronous
 
 
+@pytest.mark.parametrize("groups,factor", [(1, 1), (1, 2), (2, 1)])
+def test_completed_prefix_can_be_saved_while_a_peer_still_uses_it(groups, factor):
+    scheduler = make_offload_scheduler(gpu_blocks=65, groups=groups, factor=factor)
+    record = complete_generation(scheduler, request_for("creator", tokens=128))
+    peer = request_for("peer", tokens=144)
+    scheduler.add_request(peer)
+    scheduler.schedule()
+    offload = scheduler.connector.tokencake_scheduler
+    pool = scheduler.kv_cache_manager.block_pool
+    sources = {
+        bid
+        for group in record.snapshot.groups
+        for ids in group.block_ids
+        for bid in ids
+    }
+    assert sources and all(pool.blocks[bid].ref_cnt == 1 for bid in sources)
+    scheduler.add_request(request_for("waiting", tokens=128, value=1))
+    free = pool.get_num_free_blocks()
+    start(scheduler, record)
+    stored = {bid for job in offload._detached.values() for bid in job.source_ids}
+    assert stored == sources
+    assert pool.get_num_free_blocks() == free
+    complete_jobs(scheduler)
+    assert all(pool.blocks[bid].ref_cnt == 1 for bid in sources)
+    assert peer in scheduler.running
+    resumed = request_for("resumed", tokens=144)
+    assert offload.get_num_new_matched_tokens(resumed, 0) == (128, True)
+
+
 @pytest.mark.parametrize("constraint,expected", [("cpu", 8), ("duration", 10)])
 def test_automatic_preservation_respects_cpu_and_restore_time(
     monkeypatch, constraint, expected

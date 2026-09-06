@@ -37,7 +37,7 @@ from vllm.tokencake.metrics import Metric
 from vllm.tokencake.offload_policy import evaluate_benefit, waiting_pressure
 from vllm.v1.core.block_pool import BlockPool
 from vllm.v1.core.sched.output import SchedulerOutput
-from vllm.v1.kv_cache_interface import KVCacheConfig
+from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig
 from vllm.v1.kv_offload.base import (
     GPULoadStoreSpec,
     OffloadingSpec,
@@ -85,6 +85,11 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
         self.temporal_selection = settings.temporal_selection
         self.num_cpu_blocks = spec.num_blocks
         self.bytes_per_block = spec.cpu_page_size_per_worker
+        self._shareable_groups = {
+            index
+            for index, group in enumerate(spec.kv_cache_config.kv_cache_groups)
+            if type(group.kv_cache_spec) is FullAttentionSpec
+        }
         self.step = 0
         self._unpublished: dict[int, TransferJob] = {}
         self._detached: dict[int, DetachedStore] = {}
@@ -183,8 +188,14 @@ class TokenCakeOffloadingScheduler(OffloadingConnectorScheduler):
                     break
                 if key in record.retained or key in record.pending_retention:
                     continue
-                if cpu is None and any(
-                    self.block_pool.blocks[bid].ref_cnt != 0 for bid in source_ids
+                # Completed full-attention prefix blocks are immutable while
+                # shared. Native fences also cover their eventual reuse.
+                if (
+                    cpu is None
+                    and group_index not in self._shareable_groups
+                    and any(
+                        self.block_pool.blocks[bid].ref_cnt != 0 for bid in source_ids
+                    )
                 ):
                     continue
                 candidates.append(

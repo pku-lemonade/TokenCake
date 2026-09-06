@@ -217,9 +217,7 @@ def prepare(
         not cases
         or any(case.mode not in ("native", "agent", "offload-agent") for case in cases)
     ):
-        raise ValueError(
-            "Continuation workload requires explicit native or TokenCake cases"
-        )
+        raise ValueError("Revised workload requires explicit native or TokenCake cases")
     run_root = run_root.resolve()
     run_root.mkdir(parents=True, exist_ok=False)
     write_json(run_root / "hardware.json", hardware_preflight())
@@ -267,6 +265,8 @@ def prepare(
     parameters = workload_parameters()
     if workload_profile == "continuation":
         parameters["input_composition"] = "same-role-prefix-v1"
+    elif workload_profile == "conversation":
+        parameters["input_composition"] = "append-only-conversation-v1"
     adapter("freeze", run_root / "launcher", parameters, run_root / "workload.json")
     adapter(
         "freeze",

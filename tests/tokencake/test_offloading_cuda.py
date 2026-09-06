@@ -33,10 +33,21 @@ def collect_output(worker):
     )
 
 
-@pytest.mark.parametrize("groups,factor", [(1, 1), (1, 2), (2, 1), ("hybrid", 1)])
+@pytest.mark.parametrize(
+    "groups,factor,shared",
+    [
+        (1, 1, False),
+        (1, 2, False),
+        (2, 1, False),
+        ("hybrid", 1, False),
+        (1, 1, True),
+        (1, 2, True),
+        (2, 1, True),
+    ],
+)
 @torch.inference_mode()
 def test_preserved_data_survives_source_overwrite_and_native_prefix_reload(
-    groups, factor, monkeypatch, default_vllm_config
+    groups, factor, shared, monkeypatch, default_vllm_config
 ):
     monkeypatch.setenv("VLLM_USE_SIMPLE_KV_OFFLOAD", "0")
     scheduler = make_offload_scheduler(
@@ -74,7 +85,17 @@ def test_preserved_data_survives_source_overwrite_and_native_prefix_reload(
             for block_index, ids in enumerate(group.block_ids)
             if all(ids)
         }
-        waiter = request_for("overwrite", tokens=256, value=1)
+        if shared:
+            peer = request_for("peer", tokens=144)
+            scheduler.add_request(peer)
+            scheduler.schedule()
+            assert all(
+                scheduler.kv_cache_manager.block_pool.blocks[bid].ref_cnt > 0
+                for group in snapshot.groups
+                for ids in group.block_ids
+                for bid in ids
+            )
+        waiter = request_for("overwrite", tokens=64 if shared else 256, value=1)
         scheduler.add_request(waiter)
         assert start(scheduler, record).status_code == 200
         publication = scheduler.schedule()
@@ -86,6 +107,11 @@ def test_preserved_data_survives_source_overwrite_and_native_prefix_reload(
         assert worker.build_connector_worker_meta() is None
         assert record.pending_retention and not record.retained
 
+        if shared:
+            scheduler.finish_requests(peer.request_id, RequestStatus.FINISHED_STOPPED)
+            scheduler.finish_requests(waiter.request_id, RequestStatus.FINISHED_ABORTED)
+            waiter = request_for("overwrite-all", tokens=256, value=1)
+            scheduler.add_request(waiter)
         following = scheduler.schedule()
         assert following.num_scheduled_tokens[waiter.request_id] > 0
         next_meta = following.kv_connector_metadata

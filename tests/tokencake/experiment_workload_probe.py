@@ -17,13 +17,15 @@ import httpx
 
 def main() -> None:
     checkout = Path(sys.argv[1]).resolve()
+    profile = sys.argv[2]
     os.chdir(checkout)
     sys.path.insert(0, str(checkout))
     import vllm_serving as launcher
     from agent.app.code_writer_paper_pressure import (
         CodeWriterPaperPressureApplication,
     )
-    from agent.graph.meta import LLMCallMetadata
+    from agent.graph.meta import LLMCallMetadata, LLMTextChunkChain, TransferDataItem
+    from agent.graph.node import LLMAppNode
 
     body_sets = []
     for mode in ("native", "agent"):
@@ -60,11 +62,39 @@ def main() -> None:
             context_sources=(),
         )
         nodes = {node.name: node for node in app.graph.nodes.values()}
-        assert app.input_composition == "same-role-prefix-v1"
+        assert (
+            app.input_composition
+            == {
+                "continuation": "same-role-prefix-v1",
+                "conversation": "append-only-conversation-v1",
+            }[profile]
+        )
         assert len(nodes) == 31
         assert nodes["programmer_2_validate_patch"].mcp_function.excute_time == 8.0
         assert nodes["reviser_2_validate_patch"].mcp_function.excute_time == 10.0
         assert len(app.graph.predecessors(nodes["reviewer_1"].uuid)) == 3
+        if profile == "conversation":
+            reviewer = nodes["reviewer_1"]
+            branches = {
+                nodes[f"code_write_{index}"].uuid: LLMTextChunkChain.from_single_text(
+                    f"branch result {index}"
+                )
+                for index in range(1, 4)
+            }
+            forward = reviewer.preprocess(TransferDataItem(data=branches))
+            reverse = reviewer.preprocess(
+                TransferDataItem(data=dict(reversed(list(branches.items()))))
+            )
+            assert (
+                [chunk.text for chunk in forward.chunks]
+                == [chunk.text for chunk in reverse.chunks]
+                == [
+                    "branch result 1",
+                    "branch result 2",
+                    "branch result 3",
+                    reviewer.system_prompt.text,
+                ]
+            )
         for node in nodes.values():
             if isinstance(node, launcher.McpNode):
                 node.mcp_function.excute_time = 0.001
@@ -102,6 +132,27 @@ def main() -> None:
                 previous = by_name[f"{role}_{index}_validate_patch"]["prompt"]
                 resumed = by_name[f"{role}_{index}_repair"]["prompt"]
                 assert resumed.startswith(previous + "\ndef patch():\n    return 42\n")
+        if profile == "conversation":
+            checked = 0
+            for node in nodes.values():
+                if not isinstance(node, LLMAppNode):
+                    continue
+                predecessors = sorted(
+                    app.graph.predecessors(node.uuid),
+                    key=lambda key: app.graph.nodes[key].name,
+                )
+                previous_node = app.graph.nodes[predecessors[0]]
+                if not isinstance(previous_node, LLMAppNode):
+                    continue
+                previous = by_name[previous_node.name]["prompt"]
+                assert by_name[node.name]["prompt"].startswith(
+                    previous + "\ndef patch():\n    return 42\n"
+                )
+                if isinstance(previous_node, launcher.McpNode):
+                    assert previous_node.kvargs["reusable_prefix"]
+                    assert previous_node.kvargs["offload_eligible"]
+                checked += 1
+            assert checked == 26
         body_sets.append(
             {
                 name: (body["prompt"], body["max_tokens"])

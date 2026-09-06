@@ -186,9 +186,11 @@ generations cannot be reactivated by a later event.
 ## Cache ownership and observation
 
 Preservation selects a bounded set of valid blocks from the completed
-generation's ordered snapshot. Those GPU cache entries are already free;
-copying them to CPU preserves their contents without increasing physical GPU
-capacity. Native transfer fences protect their bytes until D2H completes.
+generation's ordered snapshot. Full-attention blocks may still be shared by
+another running request: the completed prefix remains immutable, and copying
+it does not change GPU ownership. Other cache types require free GPU entries.
+Copying preserves contents without increasing physical GPU capacity. Native
+transfer fences protect the source bytes against reuse until D2H completes.
 H2D occurs only when a later request needs a matching prefix.
 
 The default `offload.max_relief_blocks=0` selects an aligned prefix within the

@@ -175,6 +175,17 @@ Generated downstream inputs can vary with model and tool outputs, so equality
 is established for the workload construction rules, initial inputs, declared
 budgets and arrival trace, rather than every generated downstream byte.
 
+`--workload-profile conversation` applies `conversation.patch` instead. Every
+model node appends its role instruction after the existing conversation. Joins
+deduplicate the common chunk prefix and append branch results in predecessor
+name order. Tools with model successors keep their generated output before the
+tool result and declare that prefix reusable and eligible for preservation.
+The policy still evaluates actual waiting pressure and tool duration before
+copying. The graph, call count, output budgets and tool times are unchanged.
+Its contract is `input_composition="append-only-conversation-v1"`, and its own
+fresh native baseline is required. This profile can have longer downstream
+inputs because it retains tool-call text that older profiles discarded.
+
 `run` starts a fresh server per case and executes the two independent queues.
 Only affected comparison members receive repeats, including excluded launches
 in the three-launch maximum. Mooncake has one launch per QPS. Both clients and

@@ -25,7 +25,9 @@ from tools.tokencake_experiments.campaign import (
     server_command,
     workload_parameters,
 )
+from tools.tokencake_experiments.dataset import load_dataset
 from tools.tokencake_experiments.materialize import (
+    DATASET_NAME,
     SOURCE_REVISION,
     WORKLOAD_PROFILES,
     digest,
@@ -217,9 +219,25 @@ def prepare(
     snapshot_target: bool = False,
     cases: list[Case] | None = None,
     workload_profile: str = "frozen",
+    workload_dataset: Path | None = None,
 ) -> dict:
     if workload_profile not in WORKLOAD_PROFILES:
         raise ValueError(f"Unknown workload profile: {workload_profile}")
+    workload_dataset = (
+        workload_dataset or PACKAGE / "datasets" / f"{workload_profile}.json"
+    ).resolve()
+    dataset = load_dataset(workload_dataset)
+    if dataset.profile != workload_profile:
+        raise ValueError("Dataset profile does not match workload_profile")
+    if (
+        len(dataset.applications) != 24
+        or dataset.name != "code-paper-pressure"
+        or dataset.provenance.get("seed") != 42
+    ):
+        raise ValueError(
+            "Campaign requires the complete 24-application code-paper-pressure "
+            "dataset with seed 42"
+        )
     if workload_profile != "frozen" and (
         not cases
         or any(
@@ -262,40 +280,41 @@ def prepare(
     )
     write_json(run_root / "provenance.json", provenance)
     launcher = materialize(
-        SOURCE, run_root / "launcher", workload_profile=workload_profile
+        SOURCE,
+        run_root / "launcher",
+        workload_profile=workload_profile,
+        workload_dataset=workload_dataset,
     )
     reference_launcher = materialize(
         SOURCE,
         run_root / "reference-launcher",
-        patched=False,
         workload_profile=workload_profile,
+        workload_dataset=run_root / "launcher" / DATASET_NAME,
     )
     write_json(run_root / "launcher.json", launcher)
     write_json(run_root / "reference-launcher.json", reference_launcher)
     parameters = workload_parameters()
+    parameters["dataset"] = str(workload_dataset)
+    parameters["workload_dataset_sha256"] = launcher["workload_dataset_sha256"]
     if cases is not None:
         parameters["qps"] = sorted(
             set(parameters["qps"]) | {case.qps for case in cases}, reverse=True
         )
-    if workload_profile == "continuation":
-        parameters["input_composition"] = "same-role-prefix-v1"
-    elif workload_profile in ("conversation", "conversation-tools"):
-        parameters["input_composition"] = "append-only-conversation-v1"
-    if workload_profile == "conversation-tools":
-        parameters["tool_instruction_max_tokens"] = 128
+    if dataset.input_composition is not None:
+        parameters["input_composition"] = dataset.input_composition
+    if dataset.tool_instruction_max_tokens is not None:
+        parameters["tool_instruction_max_tokens"] = dataset.tool_instruction_max_tokens
     adapter("freeze", run_root / "launcher", parameters, run_root / "workload.json")
     adapter(
         "freeze",
-        SOURCE if workload_profile == "frozen" else run_root / "reference-launcher",
+        run_root / "reference-launcher",
         parameters,
         run_root / "source-workload.json",
         source=True,
     )
     workload = json.loads((run_root / "workload.json").read_text())
     if workload != json.loads((run_root / "source-workload.json").read_text()):
-        raise RuntimeError(
-            "Target and source generated different frozen workload inputs"
-        )
+        raise RuntimeError("Target and source loaded different frozen workload inputs")
     for qps, offsets in workload["arrivals"].items():
         write_json(run_root / f"arrivals-{qps}.json", {"offsets_s": offsets})
     environments = {}
@@ -384,9 +403,7 @@ def prepare(
                     content_hash(
                         {
                             "helpers": helpers["materialized_helpers"],
-                            "wrapper": None
-                            if case.mode == "old-offload-agent"
-                            else digest(PACKAGE / "launch_client.py"),
+                            "wrapper": digest(PACKAGE / "launch_client.py"),
                         }
                     ),
                     inputs,
@@ -426,7 +443,7 @@ def prepare(
         "tool_hashes": {
             path.name: digest(path)
             for path in sorted(PACKAGE.iterdir())
-            if path.suffix in (".py", ".patch")
+            if path.suffix == ".py"
         },
         "mooncake": mooncake["configuration"],
         "mooncake_master_sha256": mooncake["master_sha256"],

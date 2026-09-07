@@ -189,10 +189,10 @@ def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
         elif case["mode"] == "offload-agent":
             assert server[server.index("--kv-offloading-size") + 1] == "100"
         elif case["mode"] == "old-offload-agent":
-            assert str(SOURCE / "vllm_serving.py") in client
+            assert client[-2:] == ["--tokencake-mode", "old-offload-agent"]
             assert (
-                "--tokencake-mode" not in client
-                and "--disable_mcp_notifications" not in client
+                client[client.index("--dataset") + 1]
+                == "LAUNCHER/workload-dataset.json"
             )
         else:
             assert client[-1] == "--disable_mcp_notifications"
@@ -216,7 +216,7 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
     if not SOURCE.exists():
         pytest.skip("Requires the frozen source checkout")
     checkout = tmp_path / "launcher"
-    materialize(SOURCE, checkout, patched=False)
+    materialize(SOURCE, checkout)
     case_dir = tmp_path / "case"
     contracts = [{"input": index} for index in range(24)]
     apps = {

@@ -292,7 +292,11 @@ def read_run(path, graph=None):
         )
         launcher = json.loads((campaign / "launcher.json").read_text())
         if (
-            launcher["materialized_helpers"]["agent/app/code_writer_paper_pressure.py"]
+            launcher["materialized_helpers"][
+                "workload-dataset.json"
+                if "workload_dataset_sha256" in launcher
+                else "agent/app/code_writer_paper_pressure.py"
+            ]
             != graph["source_sha256"]
         ):
             raise ValueError(f"Graph metadata differs from frozen workload: {path}")

@@ -113,7 +113,7 @@ def component_queues() -> list[list[Case]]:
 def workload_parameters() -> dict:
     return {
         "model": str(MODEL),
-        "dataset": str(SOURCE / "dataset/agentcodeclean_new.json"),
+        "dataset": str(PACKAGE / "datasets/frozen.json"),
         "workload_revision": WORKLOAD_REVISION,
         "seed": 42,
         "num_requests": 24,
@@ -207,9 +207,12 @@ def client_command(
     case: Case, port: int, case_dir: Path, checkout: Path, arrival_trace: Path
 ) -> tuple[list[str], dict[str, str], Path]:
     old = case.mode == "old-offload-agent"
+    legacy = (checkout / "vllm_serving.py").exists() and not (
+        checkout / "dataset_client.py"
+    ).exists()
     python = ROOT / (".venv/source/.venv/bin/python" if old else ".venv/bin/python")
     command = ["taskset", "-c", case.device.cpus, str(python)]
-    if old:
+    if old and legacy:
         command += [str(SOURCE / "vllm_serving.py")]
         checkout = SOURCE
     else:
@@ -220,7 +223,11 @@ def client_command(
         "--model_path",
         str(MODEL),
         "--dataset",
-        str(SOURCE / "dataset/agentcodeclean_new.json"),
+        str(
+            SOURCE / "dataset/agentcodeclean_new.json"
+            if legacy
+            else checkout / "workload-dataset.json"
+        ),
         "--workload_source_revision",
         WORKLOAD_REVISION,
         "--task",
@@ -238,7 +245,7 @@ def client_command(
         "--arrival_trace_file",
         str(arrival_trace),
     ]
-    if case.mode in ("native", "agent", "offload", "offload-agent"):
+    if case.mode != "mooncake" and (not old or not legacy):
         command += ["--tokencake-mode", case.mode]
     elif case.mode == "mooncake":
         command += ["--disable_mcp_notifications"]

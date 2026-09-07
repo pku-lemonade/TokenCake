@@ -670,6 +670,7 @@ def main() -> None:
             subparser.add_argument(
                 "--workload-profile", choices=WORKLOAD_PROFILES, default="frozen"
             )
+            subparser.add_argument("--workload-dataset", type=Path)
             subparser.add_argument(
                 "--mode",
                 choices=("native", "agent", "offload", "offload-agent"),
@@ -706,6 +707,7 @@ def main() -> None:
             snapshot_target=args.snapshot_target,
             cases=cases,
             workload_profile=args.workload_profile,
+            workload_dataset=args.workload_dataset,
         )
     else:
         # Hold the ledger lock for reports too, so a live attempt cannot be

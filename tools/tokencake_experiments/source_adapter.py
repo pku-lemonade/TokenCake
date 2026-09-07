@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Execute the frozen workload builder/analyzer in an isolated subprocess."""
+"""Read the frozen dataset or execute historical analysis in a subprocess."""
 
 import argparse
 import importlib.util
@@ -21,6 +21,19 @@ def main() -> None:
     output = args.output.resolve()
     parameters = json.loads(args.input.read_text())
     checkout = args.checkout.resolve()
+    dataset_path = checkout / "workload-dataset.json"
+    if args.command == "freeze" and dataset_path.exists():
+        sys.path.insert(0, str(checkout))
+        from dataset import load_dataset
+
+        dataset = load_dataset(dataset_path)
+        if len(dataset.applications) != parameters["num_requests"]:
+            raise ValueError("Dataset application count differs from campaign")
+        result = dataset.freeze(parameters["qps"])
+        with output.open("x") as stream:
+            json.dump(result, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+        return
     if (
         args.command == "freeze"
         and importlib.util.find_spec("vllm.transformers_utils.tokenizer") is None

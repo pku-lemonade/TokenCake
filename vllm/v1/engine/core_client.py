@@ -25,6 +25,7 @@ from vllm.envs import VLLM_ENGINE_READY_TIMEOUT_S
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.tasks import SupportedTask
+from vllm.tokencake.events import LifecycleEvent, LifecycleEventResult
 from vllm.tracing import instrument
 from vllm.utils.async_utils import in_loop
 from vllm.utils.network_utils import (
@@ -223,6 +224,11 @@ class EngineCoreClient(ABC):
         raise NotImplementedError
 
     async def reset_mm_cache_async(self) -> None:
+        raise NotImplementedError
+
+    async def tokencake_event_async(
+        self, event: LifecycleEvent
+    ) -> LifecycleEventResult:
         raise NotImplementedError
 
     async def reset_prefix_cache_async(
@@ -1114,6 +1120,12 @@ class AsyncMPClient(MPClient):
 
     async def reset_mm_cache_async(self) -> None:
         await self.call_utility_async("reset_mm_cache")
+
+    async def tokencake_event_async(
+        self, event: LifecycleEvent
+    ) -> LifecycleEventResult:
+        result = await self.call_utility_async("tokencake_event", event)
+        return msgspec.convert(result, type=LifecycleEventResult)
 
     async def reset_prefix_cache_async(
         self, reset_running_requests: bool = False, reset_connector: bool = False

@@ -50,10 +50,12 @@ from openai.types.shared import Metadata, Reasoning
 from openai_harmony import Message as OpenAIHarmonyMessage
 from pydantic import (
     Field,
+    JsonValue,
     ValidationError,
     field_serializer,
     model_validator,
 )
+from typing_extensions import Self
 
 from vllm.config import ModelConfig
 from vllm.entrypoints.chat_utils import (
@@ -69,6 +71,7 @@ from vllm.sampling_params import (
     SamplingParams,
     StructuredOutputsParams,
 )
+from vllm.tokencake.protocol import validate_request_metadata
 from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
@@ -265,12 +268,9 @@ class ResponsesRequest(OpenAIBaseModel):
     seed: int | None = Field(None, ge=_INT64_MIN, le=_INT64_MAX)
     stop: str | list[str] | None = []
     ignore_eos: bool = False
-    vllm_xargs: dict[str, str | int | float | list[str | int | float]] | None = Field(
+    vllm_xargs: dict[str, JsonValue] | None = Field(
         default=None,
-        description=(
-            "Additional request parameters with (list of) string or "
-            "numeric values, used by custom extensions."
-        ),
+        description="Additional JSON request parameters used by custom extensions.",
     )
     kv_transfer_params: dict[str, Any] | None = Field(
         default=None,
@@ -435,6 +435,11 @@ class ResponsesRequest(OpenAIBaseModel):
             isinstance(self.include, list)
             and "message.output_text.logprobs" in self.include
         )
+
+    @model_validator(mode="after")
+    def validate_tokencake(self) -> Self:
+        validate_request_metadata(self.vllm_xargs, self.request_id)
+        return self
 
     @model_validator(mode="before")
     @classmethod

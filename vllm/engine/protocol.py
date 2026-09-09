@@ -18,6 +18,7 @@ from vllm.pooling_params import PoolingParams
 from vllm.renderers import BaseRenderer
 from vllm.sampling_params import SamplingParams
 from vllm.tasks import SupportedTask
+from vllm.tokencake.events import LifecycleEvent, LifecycleEventResult
 from vllm.v1.engine import EngineCoreRequest
 from vllm.v1.engine.input_processor import InputProcessor
 
@@ -44,6 +45,9 @@ class EngineClient(ABC):
     model_config: ModelConfig
     renderer: BaseRenderer
     input_processor: InputProcessor
+
+    async def tokencake_event(self, event: LifecycleEvent) -> LifecycleEventResult:
+        raise NotImplementedError
 
     @property
     @abstractmethod

@@ -5,7 +5,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vllm.compilation.cuda_graph import CUDAGraphStat
 from vllm.config import VllmConfig
@@ -29,6 +29,7 @@ from vllm.model_executor.layers.fused_moe.routed_experts_capturer import (
 )
 from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from vllm.multimodal.encoder_budget import MultiModalBudget
+from vllm.tokencake.protocol import metadata_from_extra_args
 from vllm.v1.core.encoder_cache_manager import (
     EncoderCacheManager,
     EncoderDecoderCacheManager,
@@ -59,6 +60,11 @@ from vllm.v1.structured_output import StructuredOutputManager
 from vllm.v1.utils import record_function_or_nullcontext
 
 logger = init_logger(__name__)
+
+if TYPE_CHECKING:
+    from vllm.tokencake.lifecycle import GenerationCause, LifecycleRegistry
+    from vllm.tokencake.offloading import TokenCakeConnector
+    from vllm.tokencake.scheduling import SchedulingController
 
 
 class Scheduler(SchedulerInterface):
@@ -240,6 +246,37 @@ class Scheduler(SchedulerInterface):
         if self.connector is not None:
             self.connector.bind_gpu_block_pool(self.kv_cache_manager.block_pool)
 
+        self._tokencake_lifecycles: LifecycleRegistry | None = None
+        self._tokencake_connector: TokenCakeConnector | None = None
+        self._tokencake_scheduling: SchedulingController | None = None
+        settings = vllm_config._tokencake_config
+        if settings is not None and (
+            settings.scheduling.enabled or settings.offload.enabled
+        ):
+            from vllm.tokencake import lifecycle
+
+            if settings.offload.enabled:
+                from vllm.tokencake import offloading
+
+                assert isinstance(self.connector, offloading.TokenCakeConnector)
+                self._tokencake_connector = self.connector
+                self._tokencake_lifecycles = (
+                    self.connector.tokencake_scheduler.lifecycles
+                )
+            else:
+                self._tokencake_lifecycles = lifecycle.LifecycleRegistry(
+                    settings.offload
+                )
+            if settings.scheduling.enabled:
+                from vllm.tokencake import scheduling
+
+                self._tokencake_scheduling = scheduling.SchedulingController(
+                    settings.scheduling,
+                    self.kv_cache_manager,
+                    self._tokencake_lifecycles.metrics,
+                    self.num_lookahead_tokens,
+                )
+
         self.use_pp = self.parallel_config.pipeline_parallel_size > 1
         self.use_v2_model_runner = vllm_config.use_v2_model_runner
         self.scheduler_reserve_full_isl = (
@@ -361,6 +398,26 @@ class Scheduler(SchedulerInterface):
 
         self.kv_cache_manager.new_step_starts()
 
+        if self._tokencake_lifecycles is not None:
+            self._tokencake_lifecycles.expire()
+        tokencake = self._tokencake_scheduling
+        if tokencake is not None and not tokencake.begin_step(
+            itertools.chain(self.skipped_waiting, self.waiting), self.running
+        ):
+            tokencake = None
+        prefill_budget = (
+            tokencake.prefill_budget(self.running, token_budget)
+            if tokencake is not None
+            else token_budget
+        )
+        scheduled_prefill_tokens: dict[str, int] = {}
+        if self._tokencake_connector is not None:
+            offload = self._tokencake_connector.tokencake_scheduler
+            offload.evaluate_pending(self, new_step=True)
+            if offload.has_unpublished:
+                # The native worker submits these stores at the next step's start.
+                token_budget = 0
+
         # First, schedule the RUNNING requests.
         req_index = 0
         while req_index < len(self.running) and token_budget > 0:
@@ -391,12 +448,24 @@ class Scheduler(SchedulerInterface):
                 num_new_tokens = self.scheduler_config.long_prefill_token_threshold
             num_new_tokens = min(num_new_tokens, token_budget)
 
+            limited_prefill = (
+                tokencake is not None
+                and request.request_id in tokencake.metadata
+                and request.num_computed_tokens < request.num_prompt_tokens
+                and num_new_tokens > 1
+                and self.scheduler_config.enable_chunked_prefill
+                and not request.has_encoder_inputs
+                and not self.need_mamba_block_aligned_split
+            )
+            if limited_prefill:
+                assert tokencake is not None
+                num_new_tokens = tokencake.cap_prefill(num_new_tokens, prefill_budget)
+
             # Make sure the input position does not exceed the max model len.
             # This is necessary when using spec decoding.
             num_new_tokens = min(
                 num_new_tokens, self.max_model_len - 1 - request.num_computed_tokens
             )
-
             # Schedule encoder inputs.
             encoder_inputs_to_schedule = None
             external_load_encoder_input: list[int] = []
@@ -439,6 +508,11 @@ class Scheduler(SchedulerInterface):
                 continue
 
             # Schedule newly needed KV blocks for the request.
+            if tokencake is not None:
+                tokencake.prepare_running(request)
+                if not tokencake.can_grow(request, num_new_tokens):
+                    req_index += 1
+                    continue
             with record_function_or_nullcontext("schedule: allocate_slots"):
                 while True:
                     new_blocks = self.kv_cache_manager.allocate_slots(
@@ -449,20 +523,49 @@ class Scheduler(SchedulerInterface):
 
                     if new_blocks is not None:
                         # The request can be scheduled.
+                        if tokencake is not None:
+                            tokencake.commit(
+                                request, running=True, new_blocks=new_blocks
+                            )
                         break
 
                     # The request cannot be scheduled.
                     # Preempt the lowest-priority request.
-                    if self.policy == SchedulingPolicy.PRIORITY:
-                        preempted_req = max(
+                    agent_victim = (
+                        tokencake.victim(
+                            request,
                             self.running,
-                            key=lambda r: (r.priority, r.arrival_time),
+                            num_new_tokens,
+                            self.num_lookahead_tokens,
+                            recompute_cost=(
+                                self._tokencake_connector.tokencake_scheduler.estimate_recompute_tokens
+                                if self._tokencake_connector is not None
+                                else None
+                            ),
+                        )
+                        if tokencake is not None
+                        else None
+                    )
+                    if (
+                        agent_victim is not None
+                        or self.policy == SchedulingPolicy.PRIORITY
+                    ):
+                        preempted_req = agent_victim or max(
+                            self.running, key=lambda r: (r.priority, r.arrival_time)
+                        )
+                        victim_index = (
+                            self.running.index(preempted_req)
+                            if agent_victim is not None
+                            else -1
                         )
                         self.running.remove(preempted_req)
                         if preempted_req in scheduled_running_reqs:
                             preempted_req_id = preempted_req.request_id
                             scheduled_running_reqs.remove(preempted_req)
                             token_budget += num_scheduled_tokens.pop(preempted_req_id)
+                            prefill_budget += scheduled_prefill_tokens.pop(
+                                preempted_req_id, 0
+                            )
                             req_to_new_blocks.pop(preempted_req_id)
                             scheduled_spec_decode_tokens.pop(preempted_req_id, None)
                             preempted_encoder_inputs = scheduled_encoder_inputs.pop(
@@ -476,11 +579,17 @@ class Scheduler(SchedulerInterface):
                                     for i in preempted_encoder_inputs
                                 )
                                 encoder_compute_budget += num_embeds_to_restore
+                                if agent_victim is not None:
+                                    new_encoder_compute_budget += num_embeds_to_restore
+                            req_index -= 1
+                        elif agent_victim is not None and victim_index < req_index:
                             req_index -= 1
                     else:
                         preempted_req = self.running.pop()
 
-                    self._preempt_request(preempted_req, scheduled_timestamp)
+                    self._preempt_request(
+                        preempted_req, scheduled_timestamp, physical=True
+                    )
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
                         # No more request to preempt. Cannot schedule this request.
@@ -496,6 +605,9 @@ class Scheduler(SchedulerInterface):
             req_to_new_blocks[request_id] = new_blocks
             num_scheduled_tokens[request_id] = num_new_tokens
             token_budget -= num_new_tokens
+            if limited_prefill:
+                scheduled_prefill_tokens[request_id] = num_new_tokens
+                prefill_budget -= num_new_tokens
             req_index += 1
 
             # Speculative decode related.
@@ -544,10 +656,33 @@ class Scheduler(SchedulerInterface):
         # Next, schedule the WAITING requests.
         if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
             step_skipped_waiting = create_request_queue(self.policy)
+            reservation_deferred: list[Request] = []
+            borrow_reserved = False
+            agent_order: deque[tuple[Request, RequestQueue]] | None = None
+            cache_agent_order = (
+                tokencake is not None
+                and not self.lora_config
+                and all(
+                    r.request_id in tokencake.metadata
+                    for r in itertools.chain(self.waiting, self.skipped_waiting)
+                )
+            )
 
-            while (self.waiting or self.skipped_waiting) and token_budget > 0:
+            while (
+                self.waiting or self.skipped_waiting or reservation_deferred
+            ) and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
                     break
+
+                if not self.waiting and not self.skipped_waiting:
+                    # Every eligible request has had its reserved-capacity turn.
+                    # Reconsider concrete beneficiaries of otherwise idle reserves.
+                    for candidate in reservation_deferred:
+                        step_skipped_waiting.remove_request(candidate)
+                        self.waiting.add_request(candidate)
+                    reservation_deferred.clear()
+                    borrow_reserved = True
+                    agent_order = None
 
                 request_queue = self._select_waiting_queue_for_scheduling()
                 assert request_queue is not None
@@ -566,6 +701,7 @@ class Scheduler(SchedulerInterface):
                         )
                     request_queue.pop_request()
                     step_skipped_waiting.prepend_request(request)
+                    agent_order = None
                     continue
 
                 # Check that adding the request still respects the max_loras
@@ -583,6 +719,50 @@ class Scheduler(SchedulerInterface):
                     step_skipped_waiting.prepend_request(request)
                     continue
 
+                if tokencake is not None and request_id in tokencake.metadata:
+                    # Resolve eligibility before comparing the frozen scores.
+                    # The native merged order's first ordinary request is a barrier.
+                    if agent_order is None:
+                        eligible = []
+                        for candidate, queue in list(
+                            tokencake.annotated_prefix(
+                                self.waiting, self.skipped_waiting, self.policy
+                            )
+                        ):
+                            if candidate is not request:
+                                blocked = self._is_blocked_waiting_status(
+                                    candidate.status
+                                )
+                                if (
+                                    blocked
+                                    and not self._try_promote_blocked_waiting_request(
+                                        candidate
+                                    )
+                                ) or (
+                                    self.lora_config
+                                    and candidate.lora_request
+                                    and len(scheduled_loras)
+                                    == self.lora_config.max_loras
+                                    and candidate.lora_request.lora_int_id
+                                    not in scheduled_loras
+                                ):
+                                    queue.remove_request(candidate)
+                                    step_skipped_waiting.prepend_request(candidate)
+                                    continue
+                            if cache_agent_order:
+                                eligible.append((candidate, queue))
+                            elif tokencake.order_key(candidate) < tokencake.order_key(
+                                request
+                            ):
+                                request, request_queue = candidate, queue
+                        if cache_agent_order:
+                            # All scores and eligibility are frozen for this step.
+                            # Repeated capacity denials need not rescan the queue.
+                            agent_order = deque(tokencake.order_candidates(eligible))
+                    if agent_order is not None:
+                        request, request_queue = agent_order.popleft()
+                    request_id = request.request_id
+
                 num_external_computed_tokens = 0
                 load_kv_async = False
                 connector_prefix_cache_queries, connector_prefix_cache_hits = 0, 0
@@ -596,6 +776,19 @@ class Scheduler(SchedulerInterface):
 
                     # Get externally-cached tokens if using a KVConnector.
                     if self.connector is not None:
+                        if (
+                            tokencake is not None
+                            and self._tokencake_connector is not None
+                            and tokencake.defer_cache_lookup(
+                                request,
+                                num_new_local_computed_tokens,
+                                new_computed_blocks,
+                            )
+                        ):
+                            tokencake.defer(request)
+                            request_queue.remove_request(request)
+                            step_skipped_waiting.prepend_request(request)
+                            continue
                         ext_tokens, load_kv_async = (
                             self.connector.get_num_new_matched_tokens(
                                 request, num_new_local_computed_tokens
@@ -606,7 +799,10 @@ class Scheduler(SchedulerInterface):
                             # The request cannot be scheduled because
                             # the KVConnector couldn't determine
                             # the number of matched tokens.
-                            request_queue.pop_request()
+                            if tokencake is not None:
+                                request_queue.remove_request(request)
+                            else:
+                                request_queue.pop_request()
                             step_skipped_waiting.prepend_request(request)
                             continue
 
@@ -646,6 +842,7 @@ class Scheduler(SchedulerInterface):
                     # KVTransfer: loading remote KV, do not allocate for new work.
                     assert num_external_computed_tokens > 0
                     num_new_tokens = 0
+                    limited_prefill = False
                 else:
                     # Number of tokens to be scheduled.
                     # We use `request.num_tokens` instead of
@@ -668,6 +865,23 @@ class Scheduler(SchedulerInterface):
 
                     num_new_tokens = min(num_new_tokens, token_budget)
                     assert num_new_tokens > 0
+                    limited_prefill = (
+                        tokencake is not None
+                        and request_id in tokencake.metadata
+                        and num_new_tokens > 1
+                        and self.scheduler_config.enable_chunked_prefill
+                        and not request.has_encoder_inputs
+                        and not self.need_mamba_block_aligned_split
+                    )
+                    if limited_prefill:
+                        assert tokencake is not None
+                        num_new_tokens = tokencake.cap_prefill(
+                            num_new_tokens, prefill_budget
+                        )
+                        if num_new_tokens == 0:
+                            request_queue.remove_request(request)
+                            step_skipped_waiting.prepend_request(request)
+                            continue
 
                     # Schedule encoder inputs.
                     if request.has_encoder_inputs:
@@ -718,6 +932,26 @@ class Scheduler(SchedulerInterface):
                         for i in encoder_inputs_to_schedule
                     )
 
+                if tokencake is not None and not tokencake.can_allocate(
+                    request,
+                    num_new_tokens,
+                    num_new_computed_tokens=num_new_local_computed_tokens,
+                    new_computed_blocks=new_computed_blocks,
+                    num_lookahead_tokens=effective_lookahead_tokens,
+                    num_external_computed_tokens=num_external_computed_tokens,
+                    num_encoder_tokens=num_encoder_tokens,
+                    borrow_reserved=borrow_reserved,
+                ):
+                    tokencake.defer(request)
+                    if (
+                        not borrow_reserved
+                        and request_id in tokencake.reservation_deferred
+                    ):
+                        reservation_deferred.append(request)
+                    request_queue.remove_request(request)
+                    step_skipped_waiting.prepend_request(request)
+                    continue
+
                 new_blocks = self.kv_cache_manager.allocate_slots(
                     request,
                     num_new_tokens,
@@ -739,6 +973,19 @@ class Scheduler(SchedulerInterface):
                         self.encoder_cache_manager.free(request)
                     break
 
+                if tokencake is not None:
+                    tokencake.commit(
+                        request,
+                        num_encoder_tokens=num_encoder_tokens,
+                        borrow_reserved=borrow_reserved,
+                    )
+                    tokencake.cache_hits(
+                        request,
+                        num_new_local_computed_tokens,
+                        num_external_computed_tokens,
+                        new_computed_blocks,
+                    )
+
                 # KVTransfer: the connector uses this info to determine
                 # if a load is needed. Note that
                 # This information is used to determine if a load is
@@ -759,7 +1006,10 @@ class Scheduler(SchedulerInterface):
                             preempted=request.num_preemptions > 0,
                         )
 
-                request = request_queue.pop_request()
+                if tokencake is not None:
+                    request_queue.remove_request(request)
+                else:
+                    request = request_queue.pop_request()
                 if load_kv_async:
                     # If loading async, allocate memory and put request
                     # into the WAITING_FOR_REMOTE_KV state.
@@ -800,6 +1050,8 @@ class Scheduler(SchedulerInterface):
                 )
                 num_scheduled_tokens[request_id] = num_new_tokens
                 token_budget -= num_new_tokens
+                if limited_prefill:
+                    prefill_budget -= num_new_tokens
                 request.status = RequestStatus.RUNNING
                 request.num_computed_tokens = num_computed_tokens
                 # Encoder-related.
@@ -926,7 +1178,9 @@ class Scheduler(SchedulerInterface):
     ) -> KVConnectorMetadata:
         return connector.build_connector_meta(scheduler_output)
 
-    def _preempt_request(self, request: Request, timestamp: float) -> None:
+    def _preempt_request(
+        self, request: Request, timestamp: float, *, physical: bool = False
+    ) -> None:
         """Preempt a request and put it back to the waiting queue.
 
         NOTE: The request should be popped from the running queue outside of this
@@ -936,6 +1190,8 @@ class Scheduler(SchedulerInterface):
             "Only running requests can be preempted"
         )
         self.kv_cache_manager.free(request)
+        if self._tokencake_scheduling is not None:
+            self._tokencake_scheduling.preempt(request, physical=physical)
         self.encoder_cache_manager.free(request)
         request.status = RequestStatus.PREEMPTED
         request.num_computed_tokens = 0
@@ -1344,6 +1600,10 @@ class Scheduler(SchedulerInterface):
         # to avoid expensive operations inside the loop.
         stopped_running_reqs: set[Request] = set()
         stopped_preempted_reqs: set[Request] = set()
+        if self._tokencake_scheduling is not None:
+            self._tokencake_scheduling.executed(
+                scheduler_output, model_runner_output, failed_kv_load_req_ids
+            )
         for req_id, num_tokens_scheduled in num_scheduled_tokens.items():
             assert num_tokens_scheduled > 0
             if failed_kv_load_req_ids and req_id in failed_kv_load_req_ids:
@@ -1753,6 +2013,15 @@ class Scheduler(SchedulerInterface):
         return len(self.running), len(self.waiting) + len(self.skipped_waiting)
 
     def add_request(self, request: Request) -> None:
+        if (
+            self._tokencake_lifecycles is not None
+            and request.sampling_params is not None
+        ):
+            metadata = metadata_from_extra_args(request.sampling_params.extra_args)
+            if metadata is not None:
+                self._tokencake_lifecycles.associate(request.request_id, metadata)
+                if self._tokencake_scheduling is not None:
+                    self._tokencake_scheduling.associate(request.request_id, metadata)
         existing = self.requests.get(request.request_id)
         if existing is not None:
             update = StreamingUpdate.from_request(request)
@@ -1844,6 +2113,27 @@ class Scheduler(SchedulerInterface):
     ) -> dict[str, Any] | None:
         assert request.is_finished()
 
+        if self._tokencake_scheduling is not None:
+            self._tokencake_scheduling.finish(request)
+        if self._tokencake_lifecycles is not None and self._tokencake_connector is None:
+            params = request.sampling_params
+            metadata = (
+                (params.extra_args or {}).get("tokencake")
+                if params is not None
+                else None
+            )
+            if metadata is not None:
+                cause: GenerationCause = (
+                    "aborted"
+                    if request.status == RequestStatus.FINISHED_ABORTED
+                    else "error"
+                    if request.status
+                    in (RequestStatus.FINISHED_ERROR, RequestStatus.FINISHED_IGNORED)
+                    else "completed"
+                )
+                self._tokencake_lifecycles.generation_finished(
+                    metadata["lifecycle_id"], cause
+                )
         connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
         self.encoder_cache_manager.free(request)
         request_id = request.request_id
@@ -1860,6 +2150,8 @@ class Scheduler(SchedulerInterface):
     def _free_blocks(self, request: Request):
         assert request.is_finished()
         self.kv_cache_manager.free(request)
+        if self._tokencake_scheduling is not None:
+            self._tokencake_scheduling.release()
         del self.requests[request.request_id]
 
     @property
@@ -1882,6 +2174,16 @@ class Scheduler(SchedulerInterface):
         return num_waiting + len(self.running)
 
     def has_finished_requests(self) -> bool:
+        if (
+            self._tokencake_connector is not None
+            and self._tokencake_connector.tokencake_scheduler.has_pending_work
+        ):
+            return True
+        if (
+            self._tokencake_lifecycles is not None
+            and self._tokencake_lifecycles.has_pending_evaluation
+        ):
+            return True
         if self.finished_req_ids:
             return True
         if self.connector is None:
@@ -1930,6 +2232,8 @@ class Scheduler(SchedulerInterface):
             self.prev_step_scheduled_req_ids.clear()
 
         reset_successful = self.kv_cache_manager.reset_prefix_cache()
+        if reset_successful and self._tokencake_lifecycles is not None:
+            self._tokencake_lifecycles.invalidate_snapshots()
         if reset_running_requests and not reset_successful:
             raise RuntimeError(
                 "Failed to reset KV cache even when all the running requests are "
@@ -1999,6 +2303,11 @@ class Scheduler(SchedulerInterface):
             kv_cache_eviction_events=eviction_events,
             spec_decoding_stats=spec_stats,
             kv_connector_stats=connector_stats_payload,
+            tokencake_stats=(
+                self._tokencake_lifecycles.stats()
+                if self._tokencake_lifecycles is not None
+                else None
+            ),
             cudagraph_stats=cudagraph_stats,
             perf_stats=perf_stats,
         )
@@ -2086,6 +2395,8 @@ class Scheduler(SchedulerInterface):
                 # No valid computed tokens, release allocated blocks.
                 # There may be a local cache hit on retry.
                 self.kv_cache_manager.free(request)
+                if self._tokencake_scheduling is not None:
+                    self._tokencake_scheduling.release()
 
             self.failed_recving_kv_req_ids.remove(request.request_id)
         else:

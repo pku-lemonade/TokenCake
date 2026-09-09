@@ -10,6 +10,9 @@ logger = init_logger(__name__)
 
 
 def register_vllm_serve_api_routers(app: FastAPI):
+    from vllm.tokencake.api_router import attach_router as attach_tokencake_router
+
+    attach_tokencake_router(app)
     if envs.VLLM_SERVER_DEV_MODE:
         logger.warning(
             "SECURITY WARNING: Development endpoints are enabled! "

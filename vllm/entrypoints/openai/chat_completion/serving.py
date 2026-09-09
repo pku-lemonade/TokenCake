@@ -72,6 +72,7 @@ from vllm.parser.abstract_parser import Parser
 from vllm.reasoning import ReasoningParser
 from vllm.renderers import ChatParams
 from vllm.sampling_params import BeamSearchParams, SamplingParams
+from vllm.tokencake.protocol import validate_generation_count
 from vllm.tokenizers import TokenizerLike
 from vllm.utils.collection_utils import as_list
 from vllm.utils.mistral import is_mistral_tokenizer, is_mistral_tool_parser
@@ -261,6 +262,10 @@ class OpenAIServingChat(OpenAIServing):
             return result
 
         conversation, engine_inputs = result
+        try:
+            validate_generation_count(request.vllm_xargs, len(engine_inputs))
+        except ValueError as exc:
+            return self.create_error_response(str(exc))
 
         request_id = (
             f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"

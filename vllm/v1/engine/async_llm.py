@@ -31,6 +31,7 @@ from vllm.renderers import renderer_from_config
 from vllm.renderers.inputs.preprocess import extract_prompt_components
 from vllm.sampling_params import RequestOutputKind, SamplingParams
 from vllm.tasks import SupportedTask
+from vllm.tokencake.events import LifecycleEvent, LifecycleEventResult
 from vllm.tokenizers import TokenizerLike
 from vllm.tracing import init_tracer
 from vllm.transformers_utils.config import maybe_register_config_serialize_by_value
@@ -917,6 +918,9 @@ class AsyncLLM(EngineClient):
     async def reset_mm_cache(self) -> None:
         await self.renderer.clear_mm_cache_async()
         await self.engine_core.reset_mm_cache_async()
+
+    async def tokencake_event(self, event: LifecycleEvent) -> LifecycleEventResult:
+        return await self.engine_core.tokencake_event_async(event)
 
     async def reset_prefix_cache(
         self, reset_running_requests: bool = False, reset_connector: bool = False

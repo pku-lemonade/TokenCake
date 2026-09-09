@@ -137,6 +137,9 @@ ignore-hidden = false
 extend-ignore-identifiers-re = [".*[Uu][Ee][0-9][Mm][0-9].*"]
 
 [tool.typos.default.extend-identifiers]
+excute_time = "excute_time"  # Frozen external launcher API spelling.
+excute_stages = "excute_stages"  # Frozen tool result payload spelling.
+certifi = "certifi"
 bbc5b7ede = "bbc5b7ede"
 NOOPs = "NOOPs"
 nin_shortcut = "nin_shortcut"

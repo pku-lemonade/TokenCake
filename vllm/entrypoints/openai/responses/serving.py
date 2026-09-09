@@ -103,6 +103,7 @@ from vllm.lora.request import LoRARequest
 from vllm.outputs import CompletionOutput
 from vllm.parser import ParserManager
 from vllm.sampling_params import SamplingParams, StructuredOutputsParams
+from vllm.tokencake.protocol import validate_generation_count
 from vllm.tokenizers import TokenizerLike
 from vllm.tool_parsers import ToolParser
 from vllm.utils import random_uuid
@@ -421,6 +422,14 @@ class OpenAIServingResponses(OpenAIServing):
         else:
             assert len(builtin_tool_list) == 0
             available_tools = []
+        try:
+            validate_generation_count(
+                request.vllm_xargs,
+                len(engine_inputs),
+                builtin_tools=bool(available_tools),
+            )
+        except ValueError as exc:
+            return self.create_error_response(str(exc))
         tokenizer = self.renderer.get_tokenizer()
 
         for engine_input in engine_inputs:

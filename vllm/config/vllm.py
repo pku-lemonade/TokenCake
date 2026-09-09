@@ -56,11 +56,14 @@ if TYPE_CHECKING:
     from transformers import PretrainedConfig
 
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
+    from vllm.tokencake.config import TokenCakeConfig
     from vllm.v1.kv_cache_interface import KVCacheConfig
 else:
     PretrainedConfig = Any
 
     QuantizationConfig = Any
+
+    TokenCakeConfig = Any
 
     KVCacheConfig = Any
 
@@ -348,6 +351,10 @@ class VllmConfig:
     """Additional config for specified platform. Different platforms may
     support different configs. Make sure the configs are valid for the platform
     you are using. Contents must be hashable."""
+    _tokencake_config: TokenCakeConfig | None = Field(
+        default=None, init=False, repr=False
+    )
+    """Immutable settings derived from the TokenCake additional-config namespace."""
     instance_id: str = ""
     """The ID of the vLLM instance."""
     optimization_level: OptimizationLevel = OptimizationLevel.O2
@@ -734,6 +741,11 @@ class VllmConfig:
         Right now, this function reads the offloading settings from
         CacheConfig and configures the KVTransferConfig accordingly.
         """
+        from vllm.tokencake.config import parse_tokencake_config, validate_prerequisites
+
+        self._tokencake_config = parse_tokencake_config(self.additional_config)
+        if self._tokencake_config is not None:
+            validate_prerequisites(self, self._tokencake_config)
         # Check if KV connector requires chunked prefill to be disabled.
         if (
             self.kv_transfer_config is not None
@@ -778,6 +790,11 @@ class VllmConfig:
 
         # This is the same for all backends
         self.kv_transfer_config.kv_role = "kv_both"
+        if (
+            self._tokencake_config is not None
+            and self._tokencake_config.offload.enabled
+        ):
+            self.kv_transfer_config.kv_connector = "TokenCakeConnector"
 
     def _verify_kv_transfer_compat(self) -> None:
         """Reject configurations that silently corrupt KV transfers."""

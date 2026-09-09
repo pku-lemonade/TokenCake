@@ -41,6 +41,7 @@ from vllm.logger import init_logger
 from vllm.logprobs import Logprob
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import BeamSearchParams, SamplingParams
+from vllm.tokencake.protocol import validate_generation_count
 from vllm.tokenizers import TokenizerLike
 from vllm.utils.async_utils import merge_async_iterators
 from vllm.utils.collection_utils import as_list
@@ -140,6 +141,10 @@ class OpenAIServingCompletion(OpenAIServing):
             return result
 
         engine_inputs = result
+        try:
+            validate_generation_count(request.vllm_xargs, len(engine_inputs))
+        except ValueError as exc:
+            return self.create_error_response(str(exc))
 
         request_id = f"cmpl-{self._base_request_id(raw_request, request.request_id)}"
         created_time = int(time.time())

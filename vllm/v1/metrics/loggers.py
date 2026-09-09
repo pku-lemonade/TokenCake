@@ -444,6 +444,14 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
         self.perf_metrics_prom = self._perf_metrics_cls(
             vllm_config, labelnames, per_engine_labelvalues
         )
+        self.tokencake_prom = None
+        settings = vllm_config._tokencake_config
+        if settings is not None and (
+            settings.scheduling.enabled or settings.offload.enabled
+        ):
+            from vllm.tokencake.metrics import TokenCakeProm
+
+            self.tokencake_prom = TokenCakeProm(engine_indexes)
 
         #
         # Scheduler state
@@ -1104,6 +1112,11 @@ class PrometheusStatLogger(AggregateStatLoggerBase):
                 self.kv_connector_prom.observe(
                     scheduler_stats.kv_connector_stats, engine_idx
                 )
+            if (
+                scheduler_stats.tokencake_stats is not None
+                and self.tokencake_prom is not None
+            ):
+                self.tokencake_prom.observe(scheduler_stats.tokencake_stats, engine_idx)
 
             if scheduler_stats.perf_stats is not None:
                 self.perf_metrics_prom.observe(scheduler_stats.perf_stats, engine_idx)

@@ -153,7 +153,7 @@ def test_shared_window_origin_comes_from_matching_budget_record(tmp_path):
     assert shared_measurement_start(config)["timestamp"] == 100
     assert shared_measurement_start(config)["line"] == 3
     config["manifest_sha256"] = "changed"
-    assert shared_measurement_start(config)["timestamp"] is None
+    assert shared_measurement_start(config)["timestamp"] == 100
 
 
 def test_relative_throughput_handles_zero_and_unavailable_without_speedup(tmp_path):

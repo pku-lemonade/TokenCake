@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 from tools.tokencake_experiments import dataset_client
-from tools.tokencake_experiments.campaign import PACKAGE, SOURCE, Case, client_command
+from tools.tokencake_experiments.campaign import PACKAGE, ROOT, Case, client_command
 from tools.tokencake_experiments.component_graph import export_graph
 from tools.tokencake_experiments.dataset import (
     Dataset,
@@ -211,17 +211,14 @@ def test_invalid_json_rejected_before_execution(defect):
 
 
 def test_snapshot_copies_json_and_clients_without_modifying_source(tmp_path):
-    if not SOURCE.exists():
-        pytest.skip("Requires the frozen analysis checkout")
-    first = materialize(
-        SOURCE, tmp_path / "first", workload_profile="conversation-tools"
-    )
+    before = git(ROOT, "status", "--porcelain")
+    first = materialize(ROOT, tmp_path / "first", workload_profile="conversation-tools")
     second = materialize(
-        SOURCE, tmp_path / "second", workload_profile="conversation-tools"
+        ROOT, tmp_path / "second", workload_profile="conversation-tools"
     )
     assert first["materialized_helpers"] == second["materialized_helpers"]
     assert first["workload_dataset_sha256"] == second["workload_dataset_sha256"]
-    assert git(SOURCE, "status", "--porcelain") == ""
+    assert git(ROOT, "status", "--porcelain") == before
     for name, expected in first["source_helpers"].items():
         assert first["materialized_helpers"][name] == expected
     graph = export_graph(tmp_path / "first")
@@ -234,7 +231,6 @@ def test_snapshot_copies_json_and_clients_without_modifying_source(tmp_path):
         tmp_path / "second",
         parameters,
         tmp_path / "source-freeze.json",
-        source=True,
     )
     assert json.loads((tmp_path / "source-freeze.json").read_text()) == json.loads(
         (tmp_path / "freeze.json").read_text()
@@ -283,16 +279,14 @@ def test_each_mode_reads_the_same_snapshot_json(tmp_path, mode):
 @pytest.mark.parametrize(
     "count,rate,offsets",
     [
-        (1, 1.0, None),
+        (0, 1.0, None),
         (24, 0.0, None),
         (24, float("nan"), None),
         (24, 1.0, [0]),
         (24, 1.0, [0, -1] + [0] * 22),
     ],
 )
-def test_partial_workload_or_invalid_arrivals_do_not_send_requests(
-    tmp_path, count, rate, offsets
-):
+def test_invalid_count_or_arrivals_do_not_send_requests(tmp_path, count, rate, offsets):
     arrival = tmp_path / "arrivals.json"
     arrival.write_text(json.dumps({"offsets_s": offsets}))
     args = argparse.Namespace(
@@ -306,4 +300,27 @@ def test_partial_workload_or_invalid_arrivals_do_not_send_requests(
 
 def test_unknown_workload_profile_cannot_materialize(tmp_path):
     with pytest.raises(ValueError, match="workload profile"):
-        materialize(SOURCE, tmp_path / "target", workload_profile="unknown")
+        materialize(ROOT, tmp_path / "target", workload_profile="unknown")
+
+
+def test_partial_workload_executes_requested_applications(tmp_path, monkeypatch):
+    observed = []
+
+    async def execute(dataset, app, **kwargs):
+        observed.append(app.id)
+        return {"app_finished": True}, {}
+
+    monkeypatch.setattr(dataset_client, "run_application", execute)
+    args = argparse.Namespace(
+        num_requests=1,
+        request_rate=1.0,
+        arrival_trace_file=None,
+        port=1,
+        model_path="org/model",
+        tokencake_mode="native",
+        output_dir=tmp_path / "apps",
+        output_file=tmp_path / "records.json",
+    )
+    asyncio.run(dataset_client.benchmark(load_profile(), args))
+    assert observed == ["0"]
+    assert len(json.loads(next(args.output_dir.glob("*.json")).read_text())) == 1

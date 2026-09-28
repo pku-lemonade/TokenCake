@@ -3,7 +3,6 @@
 """Run a frozen real-agent task set against fresh model services."""
 
 import argparse
-import fcntl
 import json
 import signal
 import subprocess
@@ -15,8 +14,8 @@ from pathlib import Path
 import psutil
 
 from .budget import Budget
-from .inputs import ROOT, digest, read_jsonl, repository, verify
-from .service import Service, worker_environment
+from .inputs import ROOT, digest, read_jsonl, repository
+from .service import Service, worker_environment, worker_python
 from .swe_local import restore_prepared_state, task_environment
 from .transport import MODES, write_json
 
@@ -46,17 +45,13 @@ def tasks_for(manifest: dict, benchmark: str, subset: str) -> list[dict]:
         tasks = []
         for category in manifest["bfcl"].values():
             path = Path(category["path"])
-            if digest(path) != category["sha256"]:
-                raise ValueError("BFCL dataset changed after freezing")
             by_id = {entry["id"]: entry for entry in read_jsonl(path)}
-            ids = category["ids"] if subset == "full" else category["probe_ids"]
+            ids = by_id if subset == "full" else category["probe_ids"]
             tasks.extend(by_id[task_id] for task_id in ids)
         return tasks
     path = Path(manifest["swe"]["path"])
-    if digest(path) != manifest["swe"]["sha256"]:
-        raise ValueError("SWE dataset changed after freezing")
     by_id = {entry["instance_id"]: entry for entry in json.loads(path.read_text())}
-    ids = manifest["swe"]["ids"] if subset == "full" else manifest["swe"]["pilot_ids"]
+    ids = by_id if subset == "full" else manifest["swe"]["pilot_ids"]
     return [by_id[task_id] for task_id in ids]
 
 
@@ -113,6 +108,10 @@ def run_tasks(
                 launching = (task_id, task_output, context)
                 spec = {
                     "benchmark": benchmark,
+                    "model_path": manifest["model_path"],
+                    "max_model_len": manifest.get("service", {}).get(
+                        "max_model_len", 32768
+                    ),
                     "context": context,
                     "base_url": f"http://127.0.0.1:{port}/v1",
                     # Only the problem goes to the SWE worker, never the gold
@@ -123,11 +122,7 @@ def run_tasks(
                 }
                 if benchmark == "swe":
                     directory = environment_root / task_id
-                    preparation = json.loads(
-                        (directory / "preparation.json").read_text()
-                    )
-                    if preparation["status"] != "prepared":
-                        raise ValueError(f"Task environment not prepared: {task_id}")
+                    restore_prepared_state(directory)
                     spec.update(
                         {
                             "preset": manifest["swe"]["preset_path"],
@@ -138,7 +133,7 @@ def run_tasks(
                 write_json(task_output / "spec.json", spec)
                 log = (task_output / "worker.log").open("x")
                 command = [
-                    str(platform / ".venv/bin/python"),
+                    worker_python(platform),
                     "-m",
                     "tools.tokencake_experiments.agent_bench.worker",
                     "--spec",
@@ -200,6 +195,7 @@ def run_tasks(
                         {
                             "mode": mode,
                             "benchmark": benchmark,
+                            "model_path": manifest["model_path"],
                             "completed": len(results),
                             "total": len(tasks),
                             "task_id": task_id,
@@ -292,20 +288,6 @@ def record_unstarted(tasks: list[dict], mode: str, output: Path, status: str):
         )
 
 
-def preflight_environments(tasks: list[dict], environment_root: Path):
-    for task in tasks:
-        directory = environment_root / task["instance_id"]
-        preparation = json.loads((directory / "preparation.json").read_text())
-        if (
-            preparation["status"] != "prepared"
-            or preparation["base_commit"] != task["base_commit"]
-        ):
-            raise ValueError(
-                f"Task environment does not match the dataset: {directory}"
-            )
-        restore_prepared_state(directory)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", type=Path, required=True)
@@ -321,9 +303,6 @@ def main():
     if args.budget_seconds <= 0 or len(set(args.modes)) != len(args.modes):
         parser.error("Use a positive budget and distinct comparison modes")
     manifest = json.loads(args.manifest.read_text())
-    if manifest["status"] != "confirmed":
-        raise ValueError("Review and confirm the candidate manifest before measurement")
-    verify(manifest)
     if args.benchmark == "swe" and args.environment_root is None:
         parser.error("SWE needs a separate prepared environment root for every mode")
     if args.output.exists():
@@ -350,14 +329,12 @@ def main():
     summaries = []
     failure = None
     with (
-        (args.platform / "gpu-0.lock").open("a") as lock,
         Budget(
             args.budget_ledger,
             digest(args.manifest),
             manifest["pilot"]["measurement_budget_s"],
         ) as budget,
     ):
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         for mode in args.modes:
             remaining = min(remaining, budget.remaining_s)
             if remaining <= 0 or failure:
@@ -374,10 +351,13 @@ def main():
                 args.environment_root / mode if args.environment_root else None
             )
             try:
-                if environment_root is not None:
-                    preflight_environments(tasks, environment_root)
                 with Service(
-                    args.platform, args.output / mode / "service", mode
+                    args.platform,
+                    args.output / mode / "service",
+                    mode,
+                    gpu=manifest["pilot"]["gpu"],
+                    model=manifest["model_path"],
+                    settings=manifest["service"],
                 ) as service:
                     with budget.measurement(f"{args.output}:{mode}"):
                         summary = run_tasks(

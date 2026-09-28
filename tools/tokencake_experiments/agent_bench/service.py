@@ -10,21 +10,18 @@ from pathlib import Path
 
 import httpx
 
-from tools.tokencake_experiments.campaign import Device
+from tools.tokencake_experiments.campaign import Device, Settings, affinity_command
 from tools.tokencake_experiments.runtime import (
     Activity,
     MetricsMonitor,
     Process,
     free_port,
     gpu_devices,
-    query_nvidia,
 )
 
-from .inputs import MODEL, ROOT, repository
+from .inputs import ROOT, repository, resource_limit
 from .observe import PressureMonitor
 from .transport import MODES, write_json
-
-BASELINE = "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af"
 
 
 class Service:
@@ -36,12 +33,16 @@ class Service:
         gpu=0,
         port=8060,
         cancel_event=None,
+        model=Settings.model,
+        settings=None,
     ):
         if mode not in MODES:
             raise ValueError(mode)
         self.platform, self.output, self.mode = platform, output, mode
         self.port, self.gpu = port, gpu
         self.cancel_event = cancel_event
+        self.model = model
+        self.settings = settings or {}
         self.process = None
         self.metrics = None
         self.observer = None
@@ -50,30 +51,28 @@ class Service:
     def __enter__(self):
         self.output.mkdir(parents=True, exist_ok=False)
         self.port = free_port(self.port)
-        checkout = ROOT / ".venv/baseline" if self.mode == "base" else ROOT
+        (self.platform / "tmp").mkdir(parents=True, exist_ok=True)
+        checkout = ROOT
         identity = repository(checkout)
-        if self.mode == "base" and (
-            identity["commit"] != BASELINE or identity["tracked_status"]
-        ):
-            raise ValueError("The native baseline must be clean at the agreed commit")
+        python = self.settings.get("python", Settings.python)
         command = [
-            str(ROOT / ".venv/bin/python"),
+            python,
             "-m",
             "vllm.entrypoints.cli.main",
             "serve",
-            str(MODEL),
+            str(self.model),
             "--host",
             "127.0.0.1",
             "--port",
             str(self.port),
             "--dtype",
-            "bfloat16",
+            self.settings.get("dtype", Settings.dtype),
             "--gpu-memory-utilization",
-            "0.5",
+            str(self.settings.get("gpu_memory_utilization", 0.5)),
             "--max-model-len",
-            "32768",
+            str(self.settings.get("max_model_len", 32768)),
             "--max-num-batched-tokens",
-            "8192",
+            str(self.settings.get("max_num_batched_tokens", 8192)),
             "--tensor-parallel-size",
             "1",
             "--pipeline-parallel-size",
@@ -91,12 +90,12 @@ class Service:
         if self.mode in ("offload", "agent_offload"):
             command += [
                 "--kv-offloading-size",
-                "100",
+                str(self.settings.get("cpu_kv_gib", 100)),
                 "--kv-offloading-backend",
                 "native",
             ]
         environment = {
-            "PATH": f"{ROOT}/.venv/bin:" + os.environ.get("PATH", ""),
+            "PATH": str(Path(python).parent) + os.pathsep + os.environ.get("PATH", ""),
             "CUDA_VISIBLE_DEVICES": str(self.gpu),
             "PYTHONPATH": str(checkout),
             "PYTHONDONTWRITEBYTECODE": "1",
@@ -110,19 +109,15 @@ class Service:
             "FLASHINFER_WORKSPACE_BASE": str(self.platform / "cache/flashinfer"),
             "TMPDIR": str(self.platform / "tmp"),
         }
-        cpus = (
-            Path(f"/sys/devices/system/node/node{self.gpu}/cpulist").read_text().strip()
-        )
+        cpus = self.settings.get("cpus")
+        command = affinity_command(command, cpus)
         gpu_info = gpu_devices()
-        selected = next(item for item in gpu_info if int(item["index"]) == self.gpu)
-        device = Device(self.gpu, selected["uuid"], self.gpu, cpus)
-        foreign = [
-            item
-            for item in query_nvidia("compute-apps", ["gpu_uuid", "pid"])
-            if item["gpu_uuid"] == device.uuid
-        ]
-        if foreign:
-            raise RuntimeError(f"Selected GPU already has compute processes: {foreign}")
+        selected = next(
+            (item for item in gpu_info if int(item["index"]) == self.gpu), {}
+        )
+        device = Device(self.gpu, selected.get("uuid", ""), cpus=cpus)
+        environment["CUDA_VISIBLE_DEVICES"] = device.uuid or str(self.gpu)
+        environment["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         write_json(
             self.output / "launch.json",
             {
@@ -134,9 +129,7 @@ class Service:
                 "selected_gpu_index": self.gpu,
                 "selected_gpu_uuid": device.uuid,
                 "cpus": cpus,
-                "cgroup_memory_max": Path("/sys/fs/cgroup/memory.max")
-                .read_text()
-                .strip(),
+                "cgroup_memory_max": resource_limit("memory.max"),
             },
         )
         started = time.time()
@@ -166,13 +159,18 @@ class Service:
                     try:
                         response = client.get(f"http://127.0.0.1:{self.port}/v1/models")
                         if response.is_success:
-                            initial = client.get(
-                                f"http://127.0.0.1:{self.port}/metrics"
-                            )
-                            initial.raise_for_status()
-                            (self.output / "metrics-start.prom").write_text(
-                                initial.text
-                            )
+                            try:
+                                initial = client.get(
+                                    f"http://127.0.0.1:{self.port}/metrics"
+                                )
+                                initial.raise_for_status()
+                                (self.output / "metrics-start.prom").write_text(
+                                    initial.text
+                                )
+                            except httpx.HTTPError as exc:
+                                (self.output / "metrics-start.error.txt").write_text(
+                                    str(exc)
+                                )
                             write_json(
                                 self.output / "ready.json",
                                 {
@@ -224,6 +222,12 @@ class Service:
                             "exit_code": self.process.process.returncode,
                         },
                     )
+
+
+def worker_python(platform: Path, *, grading=False):
+    candidates = [platform / "environments/grading/.venv/bin/python"] if grading else []
+    candidates.append(platform / ".venv/bin/python")
+    return next((str(path) for path in candidates if path.is_file()), Settings.python)
 
 
 def worker_environment(platform: Path, task_output: Path) -> dict[str, str]:

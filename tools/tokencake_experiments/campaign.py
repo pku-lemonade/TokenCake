@@ -1,25 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""The accepted A800 matrix and version-specific serving commands."""
+"""Portable experiment settings and serving commands for the current checkout."""
 
 import json
+import math
+import shutil
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(__file__).resolve().parent
-SOURCE = ROOT.parent / "vllm_agent"
-MODEL = Path("/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct")
-WORKLOAD_REVISION = "be5f23ca50818f74f485ea82f42138ec9506e1f0"
-BASELINE_REVISION = "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af"
 QPS = (1.0, 0.5, 0.1)
 COMPONENT_QPS = (1.0, 0.5, 0.2, 0.1, 0.05)
-MOONCAKE_SETTINGS = {
-    "global_segment_size": 100 * 2**30,
-    "local_buffer_size": 2**30,
-    "protocol": "tcp",
-}
+CURRENT_MODES = ("native", "agent", "offload", "offload-agent", "mooncake")
+# Historical result identities remain readable; new runs use CURRENT_MODES.
 Mode = Literal[
     "native", "agent", "offload", "offload-agent", "old-offload-agent", "mooncake"
 ]
@@ -28,15 +24,85 @@ Mode = Literal[
 @dataclass(frozen=True)
 class Device:
     index: int
-    uuid: str
-    numa: int
-    cpus: str
+    uuid: str = ""
+    numa: int | None = None
+    cpus: str | None = None
 
 
-DEVICES = (
-    Device(0, "GPU-dfe6761a-23f4-c34c-9c03-01da02020e5f", 0, "0-35,72-107"),
-    Device(1, "GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087", 1, "36-71,108-143"),
-)
+@dataclass(frozen=True)
+class Settings:
+    model: str = "Qwen/Qwen2.5-14B-Instruct"
+    gpus: tuple[int, ...] = (0,)
+    cpus: str | None = None
+    python: str = sys.executable
+    dtype: str = "auto"
+    gpu_memory_utilization: float = 0.5
+    max_model_len: int = 32768
+    cpu_offload_gib: float = 100
+
+    def __post_init__(self):
+        executable = shutil.which(self.python) or self.python
+        # Preserve the venv symlink while making snapshot working directories safe.
+        object.__setattr__(
+            self, "python", str(Path(executable).expanduser().absolute())
+        )
+        if not self.model or not self.gpus or len(set(self.gpus)) != len(self.gpus):
+            raise ValueError("Specify a model and distinct GPU indices")
+        if any(index < 0 for index in self.gpus):
+            raise ValueError("GPU indices must be nonnegative")
+        if not 0 < self.gpu_memory_utilization <= 1 or self.max_model_len <= 0:
+            raise ValueError("Invalid GPU memory utilization or maximum model length")
+        if not math.isfinite(self.cpu_offload_gib) or self.cpu_offload_gib <= 0:
+            raise ValueError("CPU offload capacity must be positive and finite")
+
+    def device(self, case):
+        index = self.gpus[0] if case.gpu_index is None else case.gpu_index
+        if index not in self.gpus:
+            raise ValueError(f"GPU {index} is not selected by this experiment")
+        return Device(index, cpus=self.cpus)
+
+    def payload(self):
+        return asdict(self)
+
+
+def add_settings_arguments(parser):
+    parser.add_argument(
+        "--model",
+        default=Settings.model,
+        help="Local model directory or cached Hugging Face model ID",
+    )
+    parser.add_argument(
+        "--gpus",
+        nargs="+",
+        type=int,
+        default=[0],
+        help="Physical nvidia-smi GPU indices; one GPU is sufficient",
+    )
+    parser.add_argument("--cpus", help="Optional CPU affinity, e.g. 0-7,16-23")
+    parser.add_argument(
+        "--python", default=sys.executable, help="Serving and client interpreter"
+    )
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.5)
+    parser.add_argument(
+        "--dtype",
+        default="auto",
+        choices=("auto", "half", "float16", "bfloat16", "float", "float32"),
+    )
+    parser.add_argument("--max-model-len", type=int, default=32768)
+    parser.add_argument("--cpu-offload-gib", type=float, default=100)
+
+
+def settings_from_args(args):
+    return Settings(
+        **{
+            name: tuple(args.gpus) if name == "gpus" else getattr(args, name)
+            for name in Settings.__dataclass_fields__
+        }
+    )
+
+
+def affinity_command(command, cpus):
+    return ["taskset", "-c", cpus, *command] if cpus else command
 
 
 @dataclass(frozen=True)
@@ -46,143 +112,118 @@ class Case:
     phase: str = "phase-1"
     gpu_index: int | None = None
 
-    def __post_init__(self) -> None:
-        if self.gpu_index is not None and self.gpu_index not in (0, 1):
-            raise ValueError("GPU index must be zero or one")
-        if self.mode not in (
-            "native",
-            "agent",
-            "offload",
-            "offload-agent",
-            "old-offload-agent",
-            "mooncake",
-        ):
+    def __post_init__(self):
+        if self.gpu_index is not None and self.gpu_index < 0:
+            raise ValueError("GPU index must be nonnegative")
+        if self.mode not in (*CURRENT_MODES, "old-offload-agent"):
             raise ValueError("Unknown benchmark mode")
-        if self.qps not in COMPONENT_QPS:
-            raise ValueError("The accepted QPS values are 1.0, 0.5, 0.2, 0.1 and 0.05")
+        if not math.isfinite(self.qps) or self.qps <= 0:
+            raise ValueError("QPS must be positive and finite")
         if self.phase not in ("phase-1", "phase-2"):
             raise ValueError("Unknown implementation phase")
         if self.phase == "phase-2" and self.mode != "offload-agent":
             raise ValueError("Only target offload-agent has an implementation phase")
 
     @property
-    def device(self) -> Device:
-        return DEVICES[
-            self.gpu_index
-            if self.gpu_index is not None
-            else int(self.mode in ("agent", "mooncake"))
-        ]
-
-    @property
-    def name(self) -> str:
+    def name(self):
         suffix = "" if self.gpu_index is None else f"/gpu-{self.gpu_index}"
         return f"{self.phase}/{self.mode}/qps-{float(self.qps)}{suffix}"
 
-    def payload(self) -> dict:
-        return asdict(self) | {"device": asdict(self.device), "name": self.name}
+    def payload(self):
+        return asdict(self) | {"name": self.name}
 
 
-def initial_queues() -> dict[str, list[list[Case]]]:
-    return {
-        "primary": [
-            [Case(mode, qps) for mode in ("native", "offload-agent") for qps in QPS],
-            [Case("agent", qps) for qps in QPS],
-        ],
-        "references": [
-            [Case("old-offload-agent", qps) for qps in QPS],
-            [Case("mooncake", qps) for qps in QPS],
-        ],
-    }
+def group_cases(cases, settings):
+    queues = {gpu: [] for gpu in settings.gpus}
+    for case in cases:
+        queues[settings.device(case).index].append(case)
+    return [queue for queue in queues.values() if queue]
 
 
-def component_queues() -> list[list[Case]]:
+def make_cases(settings, modes, qps_values):
+    # Keep a mode on the same GPU at every offered load.
     return [
-        [
-            Case(mode, qps, gpu_index=0)
-            for mode in ("native", "offload")
-            for qps in COMPONENT_QPS
-        ],
-        [
-            Case(mode, qps, gpu_index=1)
-            for mode in ("agent", "offload-agent")
-            for qps in COMPONENT_QPS
-        ],
+        Case(mode, qps, gpu_index=settings.gpus[index % len(settings.gpus)])
+        for index, mode in enumerate(modes)
+        for qps in qps_values
     ]
 
 
-def workload_parameters() -> dict:
+def initial_queues(settings=None):
+    settings = settings or Settings()
     return {
-        "model": str(MODEL),
-        "dataset": str(PACKAGE / "datasets/frozen.json"),
-        "workload_revision": WORKLOAD_REVISION,
-        "seed": 42,
-        "num_requests": 24,
-        "qps": list(QPS),
-        "gpu_memory_utilization": 0.5,
-        "max_model_len": 32768,
-        "cpu_offload_gib": 100,
+        "primary": group_cases(
+            make_cases(settings, ("native", "agent", "offload-agent"), QPS), settings
+        )
     }
 
 
-def server_command(
-    case: Case, port: int, *, target_checkout: Path = ROOT
-) -> tuple[list[str], dict[str, str], Path]:
-    old = case.mode == "old-offload-agent"
-    python = ROOT / (".venv/source/.venv/bin/python" if old else ".venv/bin/python")
-    checkout = (
-        SOURCE
-        if old
-        else ROOT / ".venv/baseline"
-        if case.mode == "native"
-        else target_checkout
+def component_queues(settings=None):
+    settings = settings or Settings()
+    return group_cases(
+        make_cases(
+            settings, ("native", "agent", "offload", "offload-agent"), COMPONENT_QPS
+        ),
+        settings,
     )
-    command = ["taskset", "-c", case.device.cpus, str(python), "-m"]
-    if old:
-        command += ["vllm.entrypoints.openai.api_server", "--model", str(MODEL)]
-    else:
-        command += ["vllm.entrypoints.cli.main", "serve", str(MODEL)]
-    command += [
+
+
+def workload_parameters(settings=None):
+    settings = settings or Settings()
+    return {
+        "model": settings.model,
+        "seed": 42,
+        "num_requests": 24,
+        "qps": list(QPS),
+        "gpu_memory_utilization": settings.gpu_memory_utilization,
+        "max_model_len": settings.max_model_len,
+        "cpu_offload_gib": settings.cpu_offload_gib,
+    }
+
+
+def server_command(case, port, *, target_checkout=ROOT, settings=None, device=None):
+    settings = settings or Settings()
+    device = device or settings.device(case)
+    if case.mode not in CURRENT_MODES:
+        raise ValueError(
+            "Historical implementations cannot be launched; use the current checkout"
+        )
+    command = [
+        settings.python,
+        "-m",
+        "vllm.entrypoints.cli.main",
+        "serve",
+        settings.model,
         "--host",
         "127.0.0.1",
         "--port",
         str(port),
+        "--dtype",
+        settings.dtype,
         "--gpu-memory-utilization",
-        "0.5",
+        str(settings.gpu_memory_utilization),
         "--max-model-len",
-        "32768",
+        str(settings.max_model_len),
         "--tensor-parallel-size",
         "1",
         "--pipeline-parallel-size",
         "1",
     ]
-    if case.mode == "agent":
+    if case.mode in ("agent", "offload", "offload-agent"):
+        config = {}
+        if case.mode == "agent":
+            config["offload"] = {"enabled": False}
+        elif case.mode == "offload":
+            config["scheduling"] = {"enabled": False}
+        command += ["--additional-config", json.dumps({"tokencake": config})]
+    if case.mode in ("offload", "offload-agent"):
         command += [
-            "--additional-config",
-            json.dumps({"tokencake": {"offload": {"enabled": False}}}),
-        ]
-    elif case.mode in ("offload", "offload-agent"):
-        command += [
-            "--additional-config",
-            '{"tokencake":{"scheduling":{"enabled":false}}}'
-            if case.mode == "offload"
-            else '{"tokencake":{}}',
             "--kv-offloading-size",
-            "100",
+            str(settings.cpu_offload_gib),
             "--kv-offloading-backend",
             "native",
         ]
-    elif old:
-        command += [
-            "--swap-space",
-            "100",
-            "--scheduling-policy",
-            "agent",
-            "--scheduler-cls",
-            "vllm.v1.core.sched.opt_scheduler.OptScheduler",
-            "--enable-agent-scheduling",
-            "--enable-kvcache-cpu-offloading",
-        ]
-    elif case.mode == "mooncake":
+    if case.mode == "mooncake":
         command += [
             "--kv-transfer-config",
             json.dumps(
@@ -190,71 +231,65 @@ def server_command(
             ),
         ]
     environment = {
-        "CUDA_VISIBLE_DEVICES": str(case.device.index),
+        "CUDA_VISIBLE_DEVICES": device.uuid or str(device.index),
+        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
         "TOKENIZERS_PARALLELISM": "false",
         "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
         "VLLM_USE_V1": "1",
-        "PYTHONPATH": str(checkout),
+        "PYTHONPATH": str(target_checkout),
         "PYTHONDONTWRITEBYTECODE": "1",
         "VLLM_SERVER_DEV_MODE": "1",
+        "VLLM_USE_SIMPLE_KV_OFFLOAD": "0",
     }
-    if not old:
-        environment["VLLM_USE_SIMPLE_KV_OFFLOAD"] = "0"
-    return command, environment, checkout
+    return affinity_command(command, device.cpus), environment, target_checkout
 
 
 def client_command(
-    case: Case, port: int, case_dir: Path, checkout: Path, arrival_trace: Path
-) -> tuple[list[str], dict[str, str], Path]:
-    old = case.mode == "old-offload-agent"
-    legacy = (checkout / "vllm_serving.py").exists() and not (
-        checkout / "dataset_client.py"
-    ).exists()
-    python = ROOT / (".venv/source/.venv/bin/python" if old else ".venv/bin/python")
-    command = ["taskset", "-c", case.device.cpus, str(python)]
-    if old and legacy:
-        command += [str(SOURCE / "vllm_serving.py")]
-        checkout = SOURCE
-    else:
-        command += [str(PACKAGE / "launch_client.py"), str(checkout)]
-    command += [
+    case,
+    port,
+    case_dir,
+    checkout,
+    arrival_trace,
+    *,
+    settings=None,
+    device=None,
+    workload=None,
+):
+    settings = settings or Settings()
+    device = device or settings.device(case)
+    workload = workload or workload_parameters(settings)
+    command = [
+        settings.python,
+        str(PACKAGE / "launch_client.py"),
+        str(checkout),
         "--port",
         str(port),
         "--model_path",
-        str(MODEL),
+        settings.model,
         "--dataset",
-        str(
-            SOURCE / "dataset/agentcodeclean_new.json"
-            if legacy
-            else checkout / "workload-dataset.json"
-        ),
-        "--workload_source_revision",
-        WORKLOAD_REVISION,
+        str(checkout / "workload-dataset.json"),
         "--task",
-        "code-paper-pressure",
+        workload.get("task", "code-paper-pressure"),
         "--request_rate",
         str(case.qps),
         "--num_requests",
-        "24",
+        str(workload["num_requests"]),
         "--seed",
-        "42",
+        str(workload["seed"]),
         "--output_dir",
         str(case_dir / "app_results"),
         "--output_file",
         str(case_dir / "output_record.json"),
         "--arrival_trace_file",
         str(arrival_trace),
+        "--tokencake-mode",
+        "native" if case.mode == "mooncake" else case.mode,
     ]
-    if case.mode != "mooncake" and (not old or not legacy):
-        command += ["--tokencake-mode", case.mode]
-    elif case.mode == "mooncake":
-        command += ["--disable_mcp_notifications"]
     return (
-        command,
+        affinity_command(command, device.cpus),
         {
-            "CUDA_VISIBLE_DEVICES": str(case.device.index),
-            "PYTHONPATH": str(SOURCE if old else ROOT),
-            "TOKENIZERS_PARALLELISM": "false",
+            "CUDA_VISIBLE_DEVICES": "",
+            "PYTHONPATH": str(ROOT),
             "PYTHONDONTWRITEBYTECODE": "1",
         },
         checkout,

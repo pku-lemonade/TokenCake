@@ -1,54 +1,44 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Verify frozen inputs and prepare isolated launchers before timed cases."""
+"""Prepare experiments from the current checkout and selected local resources."""
 
 import argparse
 import json
 import os
 import shutil
 import subprocess
-from dataclasses import asdict
+import sys
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 
-import psutil
-
 from tools.tokencake_experiments.campaign import (
-    BASELINE_REVISION,
-    DEVICES,
-    MOONCAKE_SETTINGS,
     PACKAGE,
     ROOT,
-    SOURCE,
     Case,
+    Device,
+    Settings,
+    add_settings_arguments,
     initial_queues,
     server_command,
+    settings_from_args,
     workload_parameters,
 )
 from tools.tokencake_experiments.dataset import load_dataset
 from tools.tokencake_experiments.materialize import (
-    DATASET_NAME,
-    SOURCE_REVISION,
     WORKLOAD_PROFILES,
     digest,
-    git,
     materialize,
 )
 from tools.tokencake_experiments.provenance import capture
-from tools.tokencake_experiments.report import Identity, content_hash, measurements
+from tools.tokencake_experiments.report import Identity, content_hash
 from tools.tokencake_experiments.runtime import (
-    cpu_set,
-    free_port,
     gpu_devices,
-    query_nvidia,
     write_json,
 )
 
-MOONCAKE_CONFIGURATION = ROOT.parent / "Mooncake-TokenCake"
-MOONCAKE_REVISION = "696c9a14f30ffeacda1707e8f712b7a214460be6"
 
-
-def inherited_environment() -> dict[str, str]:
+def inherited_environment():
     prefixes = (
         "VLLM_",
         "TOKENCAKE_",
@@ -68,17 +58,9 @@ def inherited_environment() -> dict[str, str]:
     }
 
 
-def adapter(
-    command: str,
-    checkout: Path,
-    parameters: dict,
-    output: Path,
-    *,
-    source: bool = False,
-) -> None:
+def adapter(command, checkout, parameters, output, *, python=sys.executable):
     parameters_path = output.with_suffix(".input.json")
     write_json(parameters_path, parameters)
-    python = ROOT / (".venv/source/.venv/bin/python" if source else ".venv/bin/python")
     with output.with_suffix(".log").open("x") as log:
         subprocess.run(
             [
@@ -92,12 +74,8 @@ def adapter(
                 "--output",
                 str(output),
             ],
-            cwd=SOURCE if source else ROOT,
-            env=os.environ
-            | {
-                "PYTHONPATH": str(SOURCE if source else ROOT),
-                "PYTHONDONTWRITEBYTECODE": "1",
-            },
+            cwd=ROOT,
+            env=os.environ | {"PYTHONPATH": str(ROOT), "PYTHONDONTWRITEBYTECODE": "1"},
             stdout=log,
             stderr=subprocess.STDOUT,
             check=True,
@@ -105,90 +83,19 @@ def adapter(
         )
 
 
-def hardware_preflight() -> dict:
+def hardware_info(settings):
+    """Record available GPU information without making it a launch prerequisite."""
     observed = gpu_devices()
-    lookup = {row["uuid"]: row for row in observed}
-    for device in DEVICES:
-        row = lookup.get(device.uuid)
-        if (
-            row is None
-            or int(row["index"]) != device.index
-            or row["name"] != "NVIDIA A800-SXM4-80GB"
-        ):
-            raise RuntimeError(f"Frozen GPU assignment changed: {observed}")
-        numa = (
-            Path(f"/sys/devices/system/node/node{device.numa}/cpulist")
-            .read_text()
-            .strip()
-        )
-        if cpu_set(numa) != cpu_set(device.cpus):
-            raise RuntimeError(f"Frozen NUMA CPU set changed: {numa}")
-        if not cpu_set(device.cpus) <= set(psutil.Process().cpu_affinity()):
-            raise RuntimeError("Driver affinity excludes an assigned NUMA CPU set")
-    processes = query_nvidia("compute-apps", ["gpu_uuid", "pid", "process_name"])
-    if processes:
-        raise RuntimeError(f"GPUs are in use before the campaign: {processes}")
-    for executable in ("taskset", "uv", str(ROOT / ".venv/bin/mooncake_master")):
-        if shutil.which(executable) is None:
-            raise RuntimeError(f"Missing executable: {executable}")
-    available = psutil.virtual_memory().available
-    if available < 264 * 2**30:
-        raise RuntimeError(
-            "Insufficient host memory for the declared concurrent offload servers"
-        )
+    lookup = {int(row["index"]): row for row in observed}
     return {
-        "gpus": observed,
-        "devices": [asdict(d) for d in DEVICES],
-        "available_host_bytes": available,
-        "available_ports": [free_port(8055), free_port(8056)],
-        "external_processes": processes,
-        "container_memory": {
-            name: path.read_text().strip()
-            for name in ("memory.max", "memory.high", "memory.current", "memory.events")
-            if (path := Path("/sys/fs/cgroup") / name).exists()
-        },
-        "shared_memory_available_bytes": shutil.disk_usage("/dev/shm").free,
-        "maximum_concurrent_host_offload_servers": 1,
-    }
-
-
-def runtime_manifest(checkout: Path) -> dict[str, str]:
-    return {
-        str(path.relative_to(checkout)): digest(path)
-        for path in sorted((checkout / "vllm").rglob("*"))
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
-    }
-
-
-def verify_code(*, target_snapshot: Path | None = None) -> dict[str, dict]:
-    configurations = {
-        "target": (ROOT, None),
-        "source": (SOURCE, SOURCE_REVISION),
-        "baseline": (ROOT / ".venv/baseline", BASELINE_REVISION),
-        "mooncake_configuration": (MOONCAKE_CONFIGURATION, MOONCAKE_REVISION),
-    }
-    result = {}
-    for name, (checkout, expected) in configurations.items():
-        revision = git(checkout, "rev-parse", "HEAD")
-        if expected is not None and revision != expected:
-            raise RuntimeError(f"Frozen {name} revision changed")
-        status = (
-            git(checkout, "status", "--porcelain", "--", "vllm")
-            if name == "target"
-            else git(checkout, "status", "--porcelain")
-        )
-        if status and not (name == "target" and target_snapshot is not None):
-            raise RuntimeError(f"Uncommitted executable changes in {name}: {status}")
-        result[name] = {"commit": revision, "checkout": str(checkout)}
-        if name != "mooncake_configuration":
-            result[name]["runtime_tree"] = git(checkout, "rev-parse", "HEAD:vllm")
-        if name == "target" and target_snapshot is not None:
-            result[name].update(
-                checkout=str(target_snapshot),
-                runtime_tree=content_hash(runtime_manifest(target_snapshot)),
-                snapshot=True,
+        "devices": [
+            asdict(
+                Device(index, lookup.get(index, {}).get("uuid", ""), cpus=settings.cpus)
             )
-    return result
+            for index in settings.gpus
+        ],
+        "observed_gpus": observed,
+    }
 
 
 def carry_exclusions(previous: Path, identities: list[Identity]) -> list[dict]:
@@ -198,168 +105,111 @@ def carry_exclusions(previous: Path, identities: list[Identity]) -> list[dict]:
     paths = sorted(previous.glob("cases/**/result.json"))
     rows = json.loads(inherited.read_text()) if inherited.exists() else []
     rows.extend(json.loads(path.read_text()) for path in paths)
-    if len(paths) != len(list(previous.glob("cases/**/attempt.json"))):
-        raise RuntimeError("Prior campaign has unfinished attempts")
     for row in rows:
         if row.get("qualifying"):
-            raise ValueError("This recovery only transfers excluded launch charges")
+            continue
         case = Case(**row["identity"]["case"])
-        target = lookup[case.name]
+        target = lookup.get(case.name)
+        if target is None:
+            continue
         carried = row | {"budget_identity": target.key}
         results.append(carried)
-    for identity in identities:
-        measurements(identity, results)
     return results
 
 
 def prepare(
-    run_root: Path,
+    run_root,
     *,
-    prior_exclusions: Path | None = None,
-    snapshot_target: bool = False,
-    cases: list[Case] | None = None,
-    workload_profile: str = "frozen",
-    workload_dataset: Path | None = None,
-) -> dict:
+    prior_exclusions=None,
+    snapshot_target=False,
+    cases=None,
+    workload_profile="conversation-tools",
+    workload_dataset=None,
+    settings=None,
+    mooncake_config=None,
+    mooncake_master=None,
+):
+    settings = settings or Settings()
     if workload_profile not in WORKLOAD_PROFILES:
         raise ValueError(f"Unknown workload profile: {workload_profile}")
-    workload_dataset = (
+    workload_dataset = Path(
         workload_dataset or PACKAGE / "datasets" / f"{workload_profile}.json"
     ).resolve()
     dataset = load_dataset(workload_dataset)
-    if dataset.profile != workload_profile:
-        raise ValueError("Dataset profile does not match workload_profile")
-    if (
-        len(dataset.applications) != 24
-        or dataset.name != "code-paper-pressure"
-        or dataset.provenance.get("seed") != 42
-    ):
-        raise ValueError(
-            "Campaign requires the complete 24-application code-paper-pressure "
-            "dataset with seed 42"
-        )
-    if workload_profile != "frozen" and (
-        not cases
-        or any(
-            case.mode not in ("native", "agent", "offload", "offload-agent")
-            for case in cases
-        )
-    ):
-        raise ValueError("Revised workload requires explicit native or TokenCake cases")
-    run_root = run_root.resolve()
+    cases = (
+        cases
+        if cases is not None
+        else [case for queue in initial_queues(settings)["primary"] for case in queue]
+    )
+    for case in cases:
+        settings.device(case)
+        if case.mode == "old-offload-agent":
+            raise ValueError(
+                "New campaigns use only implementations in the current repository"
+            )
+    hardware = hardware_info(settings)
+    mooncake = (
+        json.loads(Path(mooncake_config).read_text()) if mooncake_config else None
+    )
+    master = (
+        {
+            "path": str(
+                mooncake_master or Path(settings.python).parent / "mooncake_master"
+            )
+        }
+        if mooncake is not None
+        else None
+    )
+    run_root = Path(run_root).resolve()
     run_root.mkdir(parents=True, exist_ok=False)
-    write_json(run_root / "hardware.json", hardware_preflight())
+    write_json(run_root / "hardware.json", hardware)
+    provenance = capture(
+        SimpleNamespace(
+            target=ROOT,
+            model=settings.model,
+            dataset=workload_dataset,
+            python=settings.python,
+        )
+    )
+    settings = replace(settings, model=provenance["model"])
+    write_json(run_root / "provenance.json", provenance)
     target_snapshot = run_root / "runtime" if snapshot_target else None
-    if target_snapshot is not None:
+    if target_snapshot:
         shutil.copytree(
             ROOT / "vllm",
             target_snapshot / "vllm",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
-        write_json(
-            run_root / "runtime-manifest.json", runtime_manifest(target_snapshot)
-        )
-        (run_root / "runtime.patch").write_text(git(ROOT, "diff", "HEAD", "--", "vllm"))
-    code = verify_code(target_snapshot=target_snapshot)
+    target = {
+        "checkout": str(target_snapshot or ROOT),
+        "snapshot": bool(target_snapshot),
+    }
+    code = {"target": target, "baseline": dict(target)}
     write_json(run_root / "code.json", code)
-    original = json.loads(
-        (
-            ROOT
-            / "openspec/changes/integrate-tokencake-offload-agent/evidence"
-            / "provenance.json"
-        ).read_text()
-    )
-    provenance = capture(
-        SimpleNamespace(
-            target=ROOT,
-            model=Path(workload_parameters()["model"]),
-            original_environment=Path(original["original_environment"]["path"]),
-            mooncake_wheel=Path(original["mooncake_wheel"]["path"]),
-            vllm_wheel=Path(original["vllm_wheel"]["path"]),
-        )
-    )
-    write_json(run_root / "provenance.json", provenance)
     launcher = materialize(
-        SOURCE,
+        ROOT,
         run_root / "launcher",
         workload_profile=workload_profile,
         workload_dataset=workload_dataset,
     )
-    reference_launcher = materialize(
-        SOURCE,
-        run_root / "reference-launcher",
-        workload_profile=workload_profile,
-        workload_dataset=run_root / "launcher" / DATASET_NAME,
-    )
     write_json(run_root / "launcher.json", launcher)
-    write_json(run_root / "reference-launcher.json", reference_launcher)
-    parameters = workload_parameters()
-    parameters["dataset"] = str(workload_dataset)
-    parameters["workload_dataset_sha256"] = launcher["workload_dataset_sha256"]
-    if cases is not None:
-        parameters["qps"] = sorted(
-            set(parameters["qps"]) | {case.qps for case in cases}, reverse=True
-        )
+    parameters = workload_parameters(settings) | {
+        "dataset": str(workload_dataset),
+        "num_requests": len(dataset.applications),
+        "task": dataset.name,
+        "seed": dataset.provenance.get("seed", 42),
+        "workload_dataset_sha256": launcher["workload_dataset_sha256"],
+        "qps": sorted({case.qps for case in cases}, reverse=True),
+    }
     if dataset.input_composition is not None:
         parameters["input_composition"] = dataset.input_composition
     if dataset.tool_instruction_max_tokens is not None:
         parameters["tool_instruction_max_tokens"] = dataset.tool_instruction_max_tokens
-    adapter("freeze", run_root / "launcher", parameters, run_root / "workload.json")
-    adapter(
-        "freeze",
-        run_root / "reference-launcher",
-        parameters,
-        run_root / "source-workload.json",
-        source=True,
-    )
-    workload = json.loads((run_root / "workload.json").read_text())
-    if workload != json.loads((run_root / "source-workload.json").read_text()):
-        raise RuntimeError("Target and source loaded different frozen workload inputs")
+    workload = dataset.freeze(parameters["qps"])
+    write_json(run_root / "workload.json", workload)
     for qps, offsets in workload["arrivals"].items():
         write_json(run_root / f"arrivals-{qps}.json", {"offsets_s": offsets})
-    environments = {}
-    for role in ("target", "source", "baseline"):
-        python = ROOT / (
-            ".venv/source/.venv/bin/python" if role == "source" else ".venv/bin/python"
-        )
-        output = run_root / f"environment-{role}.json"
-        with run_root.joinpath(f"environment-{role}.log").open("x") as log:
-            subprocess.run(
-                [
-                    str(python),
-                    str(PACKAGE / "verify_environment.py"),
-                    "--role",
-                    role,
-                    "--checkout",
-                    code[role]["checkout"],
-                    "--output",
-                    str(output),
-                ],
-                cwd=ROOT,
-                env=os.environ
-                | {"PYTHONPATH": str(ROOT), "PYTHONDONTWRITEBYTECODE": "1"},
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=True,
-                timeout=300,
-            )
-        packages = json.loads(
-            subprocess.check_output(
-                ["uv", "pip", "list", "--python", str(python), "--format=json"],
-                text=True,
-            )
-        )
-        runtime = json.loads(output.read_text())
-        environments[role] = content_hash(
-            {
-                "runtime": {
-                    key: value for key, value in runtime.items() if key != "command"
-                },
-                "packages": packages,
-                "base_packages": provenance["original_environment"]["packages"],
-            }
-        )
-        write_json(run_root / f"packages-{role}.json", packages)
+    environment = content_hash({"python": settings.python})
     inputs = content_hash(
         {
             "parameters": parameters,
@@ -368,89 +218,53 @@ def prepare(
             "dataset": provenance["dataset"],
         }
     )
-    identities = []
-    mooncake = {
-        "configuration": json.loads(
-            (MOONCAKE_CONFIGURATION / "server_mooncake.json").read_text()
-        )
-        | MOONCAKE_SETTINGS,
-        "master_sha256": digest(ROOT / ".venv/bin/mooncake_master"),
-        "configuration_commit": MOONCAKE_REVISION,
-    }
     inherited = inherited_environment()
-    queues_to_prepare = (
-        [[[case for case in cases]]] if cases is not None else initial_queues().values()
-    )
-    for queues in queues_to_prepare:
-        for queue in queues:
-            for case in queue:
-                role = (
-                    "source"
-                    if case.mode == "old-offload-agent"
-                    else "baseline"
-                    if case.mode == "native"
-                    else "target"
-                )
-                helpers = (
-                    launcher
-                    if case.mode in ("native", "agent", "offload", "offload-agent")
-                    else reference_launcher
-                )
-                identity = Identity(
-                    case,
-                    content_hash(code[role]["runtime_tree"]),
-                    environments[role],
-                    content_hash(
-                        {
-                            "helpers": helpers["materialized_helpers"],
-                            "wrapper": digest(PACKAGE / "launch_client.py"),
-                        }
-                    ),
-                    inputs,
-                    content_hash(
-                        {
-                            "server": server_command(
-                                case,
-                                0,
-                                target_checkout=Path(code["target"]["checkout"]),
-                            )[:2],
-                            "inherited_environment": inherited,
-                            "mooncake": mooncake if case.mode == "mooncake" else None,
-                        }
-                    ),
-                )
-                identities.append(identity.payload())
-    if prior_exclusions is not None:
-        ledger = carry_exclusions(
-            prior_exclusions.resolve(),
-            [
-                Identity(
-                    Case(**payload["case"]),
-                    **{k: v for k, v in payload.items() if k not in ("case", "key")},
-                )
-                for payload in identities
-            ],
+    devices = {device["index"]: Device(**device) for device in hardware["devices"]}
+    identities = [
+        Identity(
+            case,
+            "current-checkout",
+            environment,
+            content_hash(
+                {
+                    "helpers": launcher["materialized_helpers"],
+                    "wrapper": digest(PACKAGE / "launch_client.py"),
+                }
+            ),
+            inputs,
+            content_hash(
+                {
+                    "server": server_command(
+                        case,
+                        0,
+                        target_checkout=Path(code["target"]["checkout"]),
+                        settings=settings,
+                        device=devices[settings.device(case).index],
+                    )[:2],
+                    "inherited_environment": inherited,
+                    "mooncake": mooncake if case.mode == "mooncake" else None,
+                }
+            ),
         )
-        write_json(run_root / "prior-exclusions.json", ledger)
+        for case in cases
+    ]
+    if prior_exclusions is not None:
+        write_json(
+            run_root / "prior-exclusions.json",
+            carry_exclusions(Path(prior_exclusions).resolve(), identities),
+        )
     frozen = {
-        "native_improvement": 0.25,
+        "schema_version": 2,
+        "settings": settings.payload(),
+        "devices": hardware["devices"],
         "workload_profile": workload_profile,
         "parameters": parameters,
         "code": code,
         "workload_sha256": workload["workload_sha256"],
         "arrivals": workload["arrivals"],
-        "identities": identities,
-        "tool_hashes": {
-            path.name: digest(path)
-            for path in sorted(PACKAGE.iterdir())
-            if path.suffix == ".py"
-        },
-        "mooncake": mooncake["configuration"],
-        "mooncake_master_sha256": mooncake["master_sha256"],
-        "inherited_environment": inherited,
-        "input_hashes": {
-            path.name: digest(path) for path in sorted(run_root.glob("*.json"))
-        },
+        "identities": [identity.payload() for identity in identities],
+        "mooncake": mooncake,
+        "mooncake_master": master,
     }
     write_json(run_root / "frozen.json", frozen)
     return frozen
@@ -459,4 +273,8 @@ def prepare(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_root", type=Path)
-    print(json.dumps(prepare(parser.parse_args().run_root), indent=2, sort_keys=True))
+    add_settings_arguments(parser)
+    args = parser.parse_args()
+    print(
+        json.dumps(prepare(args.run_root, settings=settings_from_args(args)), indent=2)
+    )

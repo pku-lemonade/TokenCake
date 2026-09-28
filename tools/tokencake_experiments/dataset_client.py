@@ -339,8 +339,12 @@ async def run_application(
 
 
 async def benchmark(dataset: Dataset, args: argparse.Namespace) -> None:
-    if args.num_requests is not None and args.num_requests != len(dataset.applications):
-        raise ValueError("num_requests must match the complete JSON dataset")
+    if args.num_requests is not None:
+        if args.num_requests <= 0:
+            raise ValueError("num_requests must be positive")
+        dataset = dataset.model_copy(
+            update={"applications": dataset.applications[: args.num_requests]}
+        )
     if not math.isfinite(args.request_rate) or args.request_rate <= 0:
         raise ValueError("request_rate must be positive and finite")
     offsets = [index / args.request_rate for index in range(len(dataset.applications))]
@@ -387,14 +391,15 @@ async def benchmark(dataset: Dataset, args: argparse.Namespace) -> None:
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    apps = {str(index): result[0] for index, result in enumerate(results)}
+    apps = {app.id: result[0] for app, result in zip(dataset.applications, results)}
     with (
         args.output_dir / f"app_qps_{args.request_rate}_num_{len(results)}.json"
     ).open("x") as stream:
         json.dump(apps, stream)
     with args.output_file.open("x") as stream:
         json.dump(
-            {str(index): result[1] for index, result in enumerate(results)}, stream
+            {app.id: result[1] for app, result in zip(dataset.applications, results)},
+            stream,
         )
 
 
@@ -415,8 +420,6 @@ def main() -> None:
     parser.add_argument("--workload_source_revision", default="")
     args = parser.parse_args()
     dataset = load_dataset(args.dataset)
-    if args.task != dataset.name or args.seed != dataset.provenance["seed"]:
-        raise ValueError("Client arguments differ from the fixed JSON dataset")
     if args.disable_mcp_notifications and args.tokencake_mode in (
         "offload",
         "offload-agent",

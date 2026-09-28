@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Check comparability and time accounting before publishing component results."""
 
+import json
+import subprocess
+import sys
 from copy import deepcopy
 
 import pytest
@@ -17,6 +20,7 @@ from tools.tokencake_experiments.component_matrix import (
     MODES,
     aggregate,
     group_runs,
+    write_report,
 )
 from tools.tokencake_experiments.report import Identity
 
@@ -157,29 +161,65 @@ def test_complete_matrix_preserves_exclusions_and_valid_repeats(matrix_rows):
     assert len(groups["native", 0.05]) == 2
 
 
-def test_incomplete_matrix_cannot_produce_full_report(matrix_rows):
-    with pytest.raises(ValueError, match="all twenty"):
-        group_runs(matrix_rows[:-1])
+def test_component_report_accepts_custom_cpu_capacity(matrix_rows):
+    for row in matrix_rows:
+        if row["identity"]["case"]["mode"] in ("offload", "offload-agent"):
+            row["settings"]["cache_config"]["kv_offloading_size"] = 16
+    assert len(group_runs(matrix_rows)) == 20
+    matrix_rows[-1]["settings"]["cache_config"]["kv_offloading_size"] = 8
+    assert len(group_runs(matrix_rows)) == 20
+
+
+def test_partial_matrix_can_be_reported(matrix_rows):
+    assert len(group_runs(matrix_rows[:-1])) == 19
+
+
+def test_partial_report_and_plots_work_without_optional_metrics(matrix_rows, tmp_path):
+    row = deepcopy(matrix_rows[0])
+    row["identity"]["case"]["qps"] = 0.3
+    row["identity"]["key"] = "edited"
+    row["performance"].update(
+        total_e2e_s=2.0, average_app_latency_s=1.0, p95_app_latency_s=1.5
+    )
+    row["application_latencies_s"] = [1.0, 1.5]
+    report = write_report([row], tmp_path / "tables")
+    assert len(report["groups"]) == 1
+    assert report["groups"][0]["hardware_timeseries.utilization.gpu.mean"] is None
+    assert report["comparisons"][0]["agent_e2e_reduction_pct"] is None
+    source = tmp_path / "analysis.json"
+    source.write_text(json.dumps([row]))
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.tokencake_experiments.component_plots",
+            str(source),
+            str(tmp_path / "figures"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert len(list((tmp_path / "figures").glob("*.png"))) == 5
 
 
 def test_duplicate_measurement_cannot_bias_median(matrix_rows):
-    with pytest.raises(ValueError, match="Duplicate result"):
-        group_runs([*matrix_rows, matrix_rows[0]])
+    groups = group_runs([*matrix_rows, matrix_rows[0]])
+    assert sum(map(len, groups.values())) == 20
 
 
 @pytest.mark.parametrize(
     "field", ["workload_sha256", "launcher_sha256", "artifact_sha256"]
 )
-def test_mixed_frozen_artifacts_are_rejected(matrix_rows, field):
+def test_hash_changes_do_not_block_grouping(matrix_rows, field):
     matrix_rows[-1]["identity"][field] = "changed"
-    with pytest.raises(ValueError, match=field):
-        group_runs(matrix_rows)
+    assert len(group_runs(matrix_rows)) == 20
 
 
 @pytest.mark.parametrize(
     "change", ["tokens", "arrival", "cache", "component", "speculative", "retry"]
 )
-def test_work_or_configuration_drift_is_rejected(matrix_rows, change):
+def test_runtime_configuration_does_not_gate_grouping(matrix_rows, change):
     row = matrix_rows[-1]
     if change == "tokens":
         row["token_counts"]["generated"] -= 1
@@ -195,5 +235,4 @@ def test_work_or_configuration_drift_is_rejected(matrix_rows, change):
         row["settings"]["speculative_config"] = {"method": "unexpected"}
     else:
         row["retries"] = 1
-    with pytest.raises(ValueError):
-        group_runs(matrix_rows)
+    assert len(group_runs(matrix_rows)) == 20

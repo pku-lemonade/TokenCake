@@ -58,28 +58,27 @@ Run the current dataset against an already running local server:
 ```bash
 .venv/bin/python -m tools.tokencake_experiments.dataset_client \
   --dataset tools/tokencake_experiments/datasets/conversation-tools.json \
-  --port 8055 --model_path /root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct \
+  --port 8055 --model_path /path/to/model \
   --request_rate 1.0 --tokencake-mode native \
   --output_dir /path/to/new/apps --output_file /path/to/new/output_record.json
 ```
 
 For comparisons, use `driver prepare --workload-profile conversation-tools`
 with the desired modes and QPS. An optional `--workload-dataset PATH` selects
-an edited file. The campaign still requires all 24 applications; all compared
-modes use the same copied JSON bytes, budgets and arrival trace. Runtime
+an edited file. The campaign runs the applications in that file; compared
+modes share the copied dataset and arrival trace. The standalone client also
+accepts `--num_requests` to run a prefix of the dataset. Runtime
 retries retain the existing error policy and disqualify a performance sample.
 
-`export_dataset.py` records the one-time migration from the clean frozen source
-revision. It is an audit/migration utility, not part of benchmark preparation or
-execution. It never applies patches:
+`export_dataset.py` exports validated copies of the four datasets from the
+current repository, with their hashes and current source revision:
 
 ```bash
 .venv/bin/python -m tools.tokencake_experiments.export_dataset \
-  --source ../vllm_agent \
-  --model /root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct \
   --output /path/to/new/datasets
 ```
 
 Editing the checked-in JSON is sufficient for subsequent workload revisions.
-New dataset/client hashes require fresh measurements, including a matching
-native baseline. Old performance reports do not certify this client migration.
+Hashes and source revisions are recorded for reference and do not gate execution.
+Reports include the available measurements; baseline comparisons appear when
+matching native results are available.

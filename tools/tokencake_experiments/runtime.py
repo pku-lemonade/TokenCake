@@ -49,7 +49,10 @@ def query_nvidia(kind: str, fields: list[str]) -> list[dict[str, str]]:
 
 
 def gpu_devices() -> list[dict[str, str]]:
-    return query_nvidia("gpu", ["index", "uuid", "name", "memory.total"])
+    try:
+        return query_nvidia("gpu", ["index", "uuid", "name", "memory.total"])
+    except (OSError, subprocess.SubprocessError):
+        return []
 
 
 def free_port(preferred: int) -> int:
@@ -77,7 +80,7 @@ class Process:
         cwd: Path,
         log: Path,
         *,
-        cpus: str,
+        cpus: str | None = None,
     ):
         self.log = log.open("x")
         try:
@@ -89,8 +92,9 @@ class Process:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            with suppress(psutil.NoSuchProcess):
-                psutil.Process(self.process.pid).cpu_affinity(sorted(cpu_set(cpus)))
+            if cpus:
+                with suppress(psutil.NoSuchProcess):
+                    psutil.Process(self.process.pid).cpu_affinity(sorted(cpu_set(cpus)))
         except BaseException:
             if hasattr(self, "process"):
                 self.close()
@@ -162,7 +166,7 @@ class Monitor:
                     cpus = process.cpu_affinity()
                     affinity.append({"pid": process.pid, "cpus": cpus})
                     self.owned.add(process.pid)
-                    if not set(cpus) <= cpu_set(self.device.cpus):
+                    if self.device.cpus and not set(cpus) <= cpu_set(self.device.cpus):
                         self.summary["affinity_violation"] = True
                 except psutil.NoSuchProcess:
                     pass

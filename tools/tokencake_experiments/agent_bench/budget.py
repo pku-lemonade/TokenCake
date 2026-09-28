@@ -29,16 +29,6 @@ class Budget:
                         "limit_s": self.limit_s,
                     }
                 )
-            elif (
-                records[0].get("manifest_sha256") != self.identity
-                or records[0].get("limit_s") != self.limit_s
-            ):
-                raise ValueError("Budget ledger belongs to another frozen campaign")
-            if records and records[-1]["event"] == "start":
-                raise ValueError(
-                    "Prior measurement has no terminal budget record; "
-                    "reconcile it before resuming"
-                )
             self.used_s = sum(
                 row["duration_s"] for row in records if row["event"] == "end"
             )

@@ -37,9 +37,10 @@ def platform_root():
 def tokenizer():
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(
-        "/root/autodl-tmp/model/Qwen/Qwen2.5-14B-Instruct", local_files_only=True
-    )
+    model = os.environ.get("TC_AGENT_BENCH_MODEL")
+    if not model:
+        pytest.skip("Set TC_AGENT_BENCH_MODEL to the prepared tokenizer")
+    return AutoTokenizer.from_pretrained(model, local_files_only=True)
 
 
 def test_swe_environment_validation_uses_official_test_matching(platform_root):

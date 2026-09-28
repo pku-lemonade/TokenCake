@@ -9,7 +9,12 @@ from pathlib import Path
 
 from transformers import AutoTokenizer
 
-from .inputs import MODEL
+from tools.tokencake_experiments.campaign import (
+    add_settings_arguments,
+    settings_from_args,
+)
+from tools.tokencake_experiments.provenance import resolve_model
+
 from .service import Service
 from .transport import Journal, TaskContext, Transport, write_json
 
@@ -18,18 +23,31 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    add_settings_arguments(parser)
     args = parser.parse_args()
+    settings = settings_from_args(args)
+    model = str(resolve_model(settings.model))
     args.output.mkdir(parents=True, exist_ok=False)
-    tokenizer = AutoTokenizer.from_pretrained(str(MODEL), local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(model)
     results = []
     for mode in ("agent_offload", "base"):
-        with Service(args.platform, args.output / mode / "service", mode) as server:
+        with Service(
+            args.platform,
+            args.output / mode / "service",
+            mode,
+            gpu=settings.gpus[0],
+            model=model,
+            settings=settings.payload() | {"cpu_kv_gib": settings.cpu_offload_gib},
+        ) as server:
             context = TaskContext(
                 "protocol-smoke", "swe_coder", mode, time.time(), 0.0, time.time() + 600
             )
             journal = Journal(args.output / mode / "journal.jsonl")
             transport = Transport(
-                f"http://127.0.0.1:{server.port}/v1", context, journal
+                f"http://127.0.0.1:{server.port}/v1",
+                context,
+                journal,
+                max_context=settings.max_model_len,
             )
             messages = [
                 {
@@ -45,7 +63,7 @@ def main():
                     )
                     result = transport.complete(
                         "chat/completions",
-                        {"model": str(MODEL), "messages": messages, "max_tokens": 32},
+                        {"model": model, "messages": messages, "max_tokens": 32},
                         tokens,
                         reusable=True,
                     )

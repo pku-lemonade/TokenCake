@@ -53,23 +53,17 @@ def score_experiment(
     platform: Path, experiment: Path, output: Path, environment_root: Path | None
 ):
     from .experiment import tasks_for, terminate
-    from .service import worker_environment
+    from .service import worker_environment, worker_python
 
     config = json.loads((experiment / "experiment.json").read_text())
     manifest_path = Path(config["manifest"])
-    if digest(manifest_path) != config["manifest_sha256"]:
-        raise ValueError("Experiment manifest changed")
     manifest = json.loads(manifest_path.read_text())
     benchmark = config["benchmark"]
-    if benchmark == "swe" and environment_root is None:
-        raise ValueError("SWE grading requires a separate prepared environment root")
     tasks = tasks_for(manifest, benchmark, config["subset"])
     answers = {}
     if benchmark == "bfcl":
         for category in manifest["bfcl"].values():
             path = Path(category["answers_path"])
-            if digest(path) != category["answers_sha256"]:
-                raise ValueError("BFCL answers changed after freezing")
             answers.update({entry["id"]: entry for entry in read_jsonl(path)})
     output.mkdir(parents=True, exist_ok=False)
     sources = []
@@ -110,15 +104,15 @@ def score_experiment(
             }
             if benchmark == "bfcl":
                 spec["answer"] = answers[task_id]
-                python = platform / ".venv/bin/python"
+                python = worker_python(platform)
             else:
-                assert environment_root is not None
-                directory = environment_root / task_id
-                agent_root = Path(config["environment_root"])
-                if directory.resolve() == (agent_root / mode / task_id).resolve():
-                    raise ValueError("Agent and grading directories must be separate")
+                directory = (
+                    environment_root / task_id
+                    if environment_root is not None
+                    else Path(config["environment_root"]) / mode / task_id
+                )
                 spec["environment"] = str(directory)
-                python = platform / "environments/grading/.venv/bin/python"
+                python = worker_python(platform, grading=True)
             write_json(task_output / "spec.json", spec)
             command = [
                 str(python),

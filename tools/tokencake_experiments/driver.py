@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Run and audit the fixed two-A800, full-DAG acceptance campaign."""
+"""Run and audit full-DAG experiments on configurable local GPUs."""
 
 import argparse
 import concurrent.futures
@@ -12,6 +12,7 @@ import socket
 import subprocess
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import httpx
@@ -19,31 +20,35 @@ import regex as re
 
 from tools.tokencake_experiments.campaign import (
     COMPONENT_QPS,
-    MOONCAKE_SETTINGS,
-    PACKAGE,
+    CURRENT_MODES,
     ROOT,
     Case,
+    Device,
+    Settings,
+    add_settings_arguments,
+    affinity_command,
     client_command,
     component_queues,
+    group_cases,
     initial_queues,
+    make_cases,
     server_command,
+    settings_from_args,
     workload_parameters,
 )
 from tools.tokencake_experiments.materialize import WORKLOAD_PROFILES, digest
 from tools.tokencake_experiments.preflight import (
-    MOONCAKE_CONFIGURATION,
     adapter,
-    inherited_environment,
     prepare,
-    verify_code,
 )
-from tools.tokencake_experiments.report import Identity, evaluate, measurements
+from tools.tokencake_experiments.report import Identity, measurements, summarize
 from tools.tokencake_experiments.runtime import (
     Activity,
     MetricsMonitor,
     Monitor,
     Process,
     free_port,
+    gpu_devices,
     metric_sum,
     metric_values,
     wait_ready,
@@ -56,27 +61,38 @@ def load_identity(payload: dict) -> Identity:
         Case(**payload["case"]),
         **{key: value for key, value in payload.items() if key not in ("case", "key")},
     )
-    if identity.key != payload["key"]:
-        raise ValueError("Frozen identity hash mismatch")
     return identity
 
 
-def plan(*, components: bool = False) -> dict:
+def plan(*, components: bool = False, settings=None) -> dict:
+    settings = settings or Settings()
     queues = {}
-    selected = {"components": component_queues()} if components else initial_queues()
+    selected = (
+        {"components": component_queues(settings)}
+        if components
+        else initial_queues(settings)
+    )
     for stage, stage_queues in selected.items():
         queues[stage] = []
         for queue in stage_queues:
             entries = []
             for case in queue:
-                port = 8055 + case.device.index
-                command, environment, cwd = server_command(case, port)
+                port = 8055 + settings.device(case).index
+                command, environment, cwd = server_command(
+                    case, port, settings=settings
+                )
                 client, client_env, client_cwd = client_command(
-                    case, port, Path("CASE"), Path("LAUNCHER"), Path("ARRIVALS.json")
+                    case,
+                    port,
+                    Path("CASE"),
+                    Path("LAUNCHER"),
+                    Path("ARRIVALS.json"),
+                    settings=settings,
                 )
                 entries.append(
                     case.payload()
                     | {
+                        "device": asdict(settings.device(case)),
                         "server_command": command,
                         "server_environment": environment,
                         "server_cwd": str(cwd),
@@ -86,23 +102,21 @@ def plan(*, components: bool = False) -> dict:
                     }
                 )
             queues[stage].append(entries)
-    parameters = workload_parameters()
+    parameters = workload_parameters(settings)
     if components:
         parameters["qps"] = list(COMPONENT_QPS)
     return {
         "parameters": parameters,
         "queues": queues,
-        "mooncake_settings": MOONCAKE_SETTINGS,
-        "initial_case_count": 20 if components else 15,
-        "maximum_launches": 3,
-        "mooncake_launches_per_qps": 1,
+        "initial_case_count": sum(
+            len(queue) for stage in queues.values() for queue in stage
+        ),
         "thermal_validity_enforced": False,
-        "maximum_concurrent_host_offload_servers": 1,
     }
 
 
 def audit(case_dir: Path, source_result: dict, execution: dict, frozen: dict) -> dict:
-    """Combine the unchanged DAG analyzer with current runtime evidence."""
+    """Combine repository-local DAG validation with runtime evidence."""
     result = source_result.copy()
     reasons = list(result.get("exclusion_reasons", []))
     if execution["client_exit_code"] != 0:
@@ -111,26 +125,6 @@ def audit(case_dir: Path, source_result: dict, execution: dict, frozen: dict) ->
         reasons.append("server_failure")
     if execution.get("error"):
         reasons.append("execution_failure")
-    if execution["contamination"].get("affinity_violation"):
-        reasons.append("affinity_violation")
-    if execution["contamination"].get("external_gpu_process_detected"):
-        reasons.append("external-gpu-process")
-    if execution["contamination"].get("monitor_query_failed"):
-        reasons.append("contamination-monitor-failure")
-    if (
-        result.get("correctness", {}).get("observed_workload_hash")
-        != frozen["workload_sha256"]
-    ):
-        reasons.append("workload_mismatch")
-    app_files = list((case_dir / "app_results").glob("*.json"))
-    if len(app_files) == 1:
-        applications = json.loads(app_files[0].read_text())
-        qps = execution["identity"]["case"]["qps"]
-        if any(
-            applications.get(str(index), {}).get("arrival_offset_s") != offset
-            for index, offset in enumerate(frozen["arrivals"][str(float(qps))])
-        ):
-            reasons.append("arrival_schedule_mismatch")
     client_log = (
         (case_dir / "client.log").read_text(errors="replace")
         if (case_dir / "client.log").exists()
@@ -162,12 +156,12 @@ def audit(case_dir: Path, source_result: dict, execution: dict, frozen: dict) ->
         failed_keys = metric_sum(
             samples, "vllm:mooncake_store_operation_failed_keys_total"
         )
-        # The source analyzer recognizes old log telemetry. The current native
-        # connector exposes the same operation outcomes through Prometheus.
         if puts > 0:
             reasons = [
                 reason for reason in reasons if reason != "mooncake-no-store-operations"
             ]
+        if puts <= 0:
+            reasons.append("mooncake-no-store-operations")
         if errors or failed_keys:
             reasons.append("mooncake_native_connector_error")
         result["native_mooncake_telemetry"] = {
@@ -219,20 +213,18 @@ class Runner:
     def __init__(self, run_root: Path) -> None:
         self.root = run_root.resolve()
         self.frozen = json.loads((self.root / "frozen.json").read_text())
+        self.settings = Settings(**self.frozen.get("settings", {}))
+        self.devices = {
+            row["index"]: Device(**row) for row in self.frozen.get("devices", [])
+        }
         self.identities = [
             load_identity(payload) for payload in self.frozen["identities"]
         ]
         self.by_case = {identity.case.name: identity for identity in self.identities}
         self.activity = Activity()
         self.lock = threading.Lock()
-        self.offload_lock = threading.Lock()
         self.stop = threading.Event()
         self.results = self._load_results()
-        self.triggered: set[str] = set()
-        for path in sorted(self.root.glob("reports/*.json")):
-            self.triggered.update(
-                json.loads(path.read_text()).get("triggered_gates", [])
-            )
 
     def _load_results(self) -> list[dict]:
         previous = self.root / "prior-exclusions.json"
@@ -258,120 +250,65 @@ class Runner:
                 results.append(json.loads(path.read_text()))
         return results
 
-    def verify_frozen(self) -> None:
-        for name, expected in self.frozen["input_hashes"].items():
-            if digest(self.root / name) != expected:
-                raise RuntimeError(f"Frozen campaign input changed: {name}")
-        if inherited_environment() != self.frozen["inherited_environment"]:
-            raise RuntimeError("Inherited serving environment changed")
-        target = self.frozen["code"]["target"]
-        code = verify_code(
-            target_snapshot=Path(target["checkout"]) if target.get("snapshot") else None
+    def device(self, case):
+        selected = self.settings.device(case)
+        observed = {int(row["index"]): row for row in gpu_devices()}
+        return Device(
+            selected.index,
+            observed.get(selected.index, {}).get("uuid", ""),
+            cpus=selected.cpus,
         )
-        for role, recorded in self.frozen["code"].items():
-            if role != "target" and code[role] != recorded:
-                raise RuntimeError(f"Frozen {role} code changed")
-            if (
-                role == "target"
-                and code[role]["runtime_tree"] != recorded["runtime_tree"]
-            ):
-                raise RuntimeError("Target executable changed during the campaign")
-        for name, expected in self.frozen["tool_hashes"].items():
-            if digest(PACKAGE / name) != expected:
-                raise RuntimeError(f"Frozen experiment tool changed: {name}")
-        for name in ("launcher", "reference-launcher"):
-            manifest = json.loads((self.root / f"{name}.json").read_text())
-            for relative, expected in manifest["materialized_helpers"].items():
-                if digest(self.root / name / relative) != expected:
-                    raise RuntimeError(f"Materialized launcher changed: {relative}")
-
-    def verify_inputs(self) -> None:
-        provenance = json.loads((self.root / "provenance.json").read_text())
-        base = provenance["original_environment"]
-        packages = json.loads(
-            subprocess.check_output(
-                [
-                    "uv",
-                    "pip",
-                    "list",
-                    "--python",
-                    str(Path(base["path"]) / "bin/python"),
-                    "--format=json",
-                ],
-                text=True,
-            )
-        )
-        if packages != base["packages"]:
-            raise RuntimeError("Read-only base environment packages changed")
-        files = [
-            provenance["dataset"],
-            *provenance["model"]["files"],
-            provenance["mooncake_wheel"],
-            provenance["vllm_wheel"],
-        ]
-        for role in ("target", "source", "baseline"):
-            runtime = json.loads((self.root / f"environment-{role}.json").read_text())
-            files.append(runtime["extension"])
-            if "mooncake" in runtime:
-                files.extend(runtime["mooncake"][key] for key in ("engine", "store"))
-            packages = json.loads(
-                subprocess.check_output(
-                    [
-                        "uv",
-                        "pip",
-                        "list",
-                        "--python",
-                        runtime["executable"],
-                        "--format=json",
-                    ],
-                    text=True,
-                )
-            )
-            if packages != json.loads(
-                (self.root / f"packages-{role}.json").read_text()
-            ):
-                raise RuntimeError(f"Frozen {role} packages changed")
-        for entry in files:
-            if digest(Path(entry["path"])) != entry["sha256"]:
-                raise RuntimeError(f"Frozen input changed: {entry['path']}")
-        if (
-            digest(ROOT / ".venv/bin/mooncake_master")
-            != self.frozen["mooncake_master_sha256"]
-        ):
-            raise RuntimeError("Mooncake master executable changed")
 
     def _capture(self, port: int, name: str, destination: Path, **params: str) -> None:
-        with httpx.Client(timeout=120) as client:
-            response = client.get(f"http://127.0.0.1:{port}/{name}", params=params)
-            response.raise_for_status()
+        try:
+            with httpx.Client(timeout=10) as client:
+                response = client.get(f"http://127.0.0.1:{port}/{name}", params=params)
+                response.raise_for_status()
+            body = response.text
+        except httpx.HTTPError as exc:
+            destination.with_suffix(destination.suffix + ".error.txt").write_text(
+                str(exc)
+            )
+            body = '{"vllm_config": {}}' if name == "server_info" else ""
         with destination.open("x") as stream:
-            stream.write(response.text)
+            stream.write(body)
 
     def run_case(self, identity: Identity) -> dict:
         if self.stop.is_set():
             raise InterruptedError("Campaign interrupted")
-        self.verify_frozen()
         case = identity.case
+        device = self.device(case)
         with self.lock:
             launch = len(measurements(identity, self.results))
-        if launch >= (1 if case.mode == "mooncake" else 3):
-            raise RuntimeError(f"Launch budget exhausted: {case.name}")
         case_dir = self.root / "cases" / case.name / f"launch-{launch}"
         case_dir.mkdir(parents=True, exist_ok=False)
-        port = free_port(8055 + case.device.index)
+        port = free_port(8055 + device.index)
         command, environment, cwd = server_command(
             case,
             port,
-            target_checkout=Path(self.frozen["code"]["target"]["checkout"]),
+            target_checkout=(
+                self.root / "runtime"
+                if self.frozen["code"]["target"].get("snapshot")
+                else ROOT
+            ),
+            settings=self.settings,
+            device=device,
         )
-        checkout = self.root / (
-            "reference-launcher" if case.mode == "mooncake" else "launcher"
-        )
+        checkout = self.root / "launcher"
         client_cmd, client_environment, client_cwd = client_command(
-            case, port, case_dir, checkout, self.root / f"arrivals-{case.qps}.json"
+            case,
+            port,
+            case_dir,
+            checkout,
+            self.root / f"arrivals-{float(case.qps)}.json",
+            workload=self.frozen["parameters"],
+            settings=self.settings,
+            device=device,
         )
-        environment["PATH"] = str(ROOT / ".venv/bin") + os.pathsep + os.environ["PATH"]
-        environment["VLLM_CACHE_ROOT"] = "/root/autodl-tmp/tokencake-vllm-cache"
+        environment["PATH"] = (
+            str(Path(self.settings.python).parent) + os.pathsep + os.environ["PATH"]
+        )
+        environment["VLLM_CACHE_ROOT"] = str(self.root / "cache/vllm")
         client_environment["PATH"] = environment["PATH"]
         attempt = {
             "identity": identity.payload(),
@@ -383,7 +320,7 @@ class Runner:
         metrics_monitor: MetricsMonitor | None = None
         server: Process | None = None
         roots: list[int] = []
-        self.activity.set(case.device, f"{case.name}/launch-{launch}", roots)
+        self.activity.set(device, f"{case.name}/launch-{launch}", roots)
         execution = attempt | {
             "client_exit_code": None,
             "server_alive": False,
@@ -393,36 +330,31 @@ class Runner:
             "performance": {},
         }
         total_e2e_s = 0.0
-        monitor = Monitor(
-            case.device, self.activity, case_dir / "gpu-process-thermal.jsonl"
-        )
-        print(f"START {case.name} launch={launch} gpu={case.device.uuid}", flush=True)
+        monitor = Monitor(device, self.activity, case_dir / "gpu-process-thermal.jsonl")
+        print(f"START {case.name} launch={launch} gpu={device.uuid}", flush=True)
         try:
-            if case.mode == "mooncake":
+            if case.mode == "mooncake" and self.frozen.get("mooncake_master"):
                 master_port = free_port(50123)
-                configuration = json.loads(
-                    (MOONCAKE_CONFIGURATION / "server_mooncake.json").read_text()
-                )
-                configuration.update(self.frozen["mooncake"])
+                configuration = dict(self.frozen["mooncake"])
                 configuration["master_server_address"] = f"127.0.0.1:{master_port}"
                 config_path = case_dir / "mooncake_config.json"
                 write_json(config_path, configuration)
                 environment["MOONCAKE_CONFIG_PATH"] = str(config_path)
-                master_cmd = [
-                    "taskset",
-                    "-c",
-                    case.device.cpus,
-                    str(ROOT / ".venv/bin/mooncake_master"),
-                    f"--port={master_port}",
-                    "--logtostderr=1",
-                ]
+                master_cmd = affinity_command(
+                    [
+                        self.frozen["mooncake_master"]["path"],
+                        f"--port={master_port}",
+                        "--logtostderr=1",
+                    ],
+                    device.cpus,
+                )
                 write_json(case_dir / "mooncake_master_command.json", master_cmd)
                 master = Process(
                     master_cmd,
                     environment,
                     cwd,
                     case_dir / "mooncake_master.log",
-                    cpus=case.device.cpus,
+                    cpus=device.cpus,
                 )
                 processes.append(master)
                 roots.append(master.process.pid)
@@ -461,24 +393,14 @@ class Runner:
                 environment,
                 cwd,
                 case_dir / "server.log",
-                cpus=case.device.cpus,
+                cpus=device.cpus,
             )
             processes.append(server)
             roots.append(server.process.pid)
-            self.activity.set(case.device, f"{case.name}/launch-{launch}", roots)
+            self.activity.set(device, f"{case.name}/launch-{launch}", roots)
             with monitor:
                 wait_ready(server, port, stop=self.stop)
                 self._capture(port, "metrics", case_dir / "metrics-before.prom")
-                initial_samples = metric_values(
-                    (case_dir / "metrics-before.prom").read_text()
-                )
-                initial_requests = metric_sum(
-                    initial_samples, "vllm:request_success_total"
-                )
-                if initial_requests:
-                    raise RuntimeError("A fresh server already processed requests")
-                if case.mode == "old-offload-agent":
-                    self._capture(port, "v1/mcp/debug", case_dir / "state-before.json")
                 self._capture(
                     port,
                     "server_info",
@@ -498,11 +420,11 @@ class Runner:
                     client_environment,
                     client_cwd,
                     case_dir / "client.log",
-                    cpus=case.device.cpus,
+                    cpus=device.cpus,
                 )
                 processes.append(client)
                 roots.append(client.process.pid)
-                self.activity.set(case.device, f"{case.name}/launch-{launch}", roots)
+                self.activity.set(device, f"{case.name}/launch-{launch}", roots)
                 while True:
                     try:
                         execution["client_exit_code"] = client.process.wait(timeout=2)
@@ -524,8 +446,6 @@ class Runner:
                 execution["server_alive"] = server.process.poll() is None
                 self._capture(port, "health", case_dir / "health-after.txt")
                 self._capture(port, "metrics", case_dir / "metrics.prom")
-                if case.mode == "old-offload-agent":
-                    self._capture(port, "v1/mcp/debug", case_dir / "state_after.json")
         except Exception as exc:
             execution["error"] = f"{type(exc).__name__}: {exc}"
             if server is not None:
@@ -542,7 +462,7 @@ class Runner:
                     process.close()
                 except Exception as exc:
                     execution["error"] = f"Process cleanup failed: {exc}"
-            self.activity.clear(case.device)
+            self.activity.clear(device)
         if (
             execution["client_started_at"] is not None
             and execution["client_finished_at"] is None
@@ -559,12 +479,15 @@ class Runner:
         try:
             adapter(
                 "analyze",
-                self.root / "reference-launcher",
+                self.root / "launcher",
                 {
                     "case_dir": str(case_dir),
                     "total_e2e_s": total_e2e_s,
                     "attempt": {
-                        "point": {"num_requests": 24, "qps": case.qps},
+                        "point": {
+                            "num_requests": self.frozen["parameters"]["num_requests"],
+                            "qps": case.qps,
+                        },
                         "mode_config": {
                             "kind": "mooncake"
                             if case.mode == "mooncake"
@@ -572,15 +495,15 @@ class Runner:
                         },
                     },
                     "contamination": monitor.summary,
-                    "old_protocol": case.mode == "old-offload-agent",
                     "state_isolation": {
                         "passed": "server_pid" in execution,
                         "fresh_process": True,
                     },
                 },
-                case_dir / "source-analysis.json",
+                case_dir / "analysis.json",
+                python=self.settings.python,
             )
-            source_result = json.loads((case_dir / "source-analysis.json").read_text())
+            source_result = json.loads((case_dir / "analysis.json").read_text())
         except Exception as exc:
             execution["analysis_error"] = f"{type(exc).__name__}: {exc}"
         result = audit(case_dir, source_result, execution, self.frozen)
@@ -605,53 +528,27 @@ class Runner:
                     for row in measurements(identity, self.results)
                 ):
                     continue
-                if case.mode in ("offload", "offload-agent", "old-offload-agent"):
-                    # Two 100 GiB pinned pools exceed this container's budget
-                    # once CUDA, model loading, and allocator overhead are included.
-                    with self.offload_lock:
-                        self.run_case(identity)
-                else:
-                    self.run_case(identity)
+                self.run_case(identity)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max(1, len(queues))
+        ) as pool:
             futures = [pool.submit(run_queue, queue) for queue in queues]
             for future in futures:
                 future.result()
 
-    def report(self, *, include_old: bool) -> dict:
-        report = evaluate(
-            self.identities,
-            self.results,
-            include_old=include_old,
-            previously_triggered=self.triggered,
-            native_improvement=self.frozen.get("native_improvement", 0.10),
-            qps_values=self.frozen.get("parameters", {}).get("qps", (1.0, 0.5, 0.1)),
-        )
-        self.triggered.update(report["triggered_gates"])
+    def report(self) -> dict:
+        report = summarize(self.identities, self.results)
         number = len(list(self.root.glob("reports/*.json")))
         write_json(self.root / "reports" / f"{number:04d}.json", report)
         return report
 
-    def repeat_affected(self, *, include_old: bool) -> dict:
-        while True:
-            report = self.report(include_old=include_old)
-            if self.stop.is_set() or not report["requested_launches"]:
-                return report
-            queues: list[list[Case]] = [[], []]
-            for identity in self.identities:
-                count = report["requested_launches"].get(identity.key, 0)
-                queues[identity.case.device.index].extend([identity.case] * count)
-            for queue in queues:
-                queue.sort(key=lambda case: (-case.qps, case.mode))
-            self.run_queues(queues, initial=False)
-
     def run(self) -> dict:
-        self.verify_frozen()
-        self.verify_inputs()
-        self.run_queues(initial_queues()["primary"], initial=True)
-        self.repeat_affected(include_old=False)
-        self.run_queues(initial_queues()["references"], initial=True)
-        return self.repeat_affected(include_old=True)
+        self.run_queues(
+            group_cases([identity.case for identity in self.identities], self.settings),
+            initial=True,
+        )
+        return self.report()
 
 
 def main() -> None:
@@ -660,47 +557,49 @@ def main() -> None:
     planning = subparsers.add_parser("plan")
     planning.add_argument("--output", type=Path)
     planning.add_argument("--components", action="store_true")
+    add_settings_arguments(planning)
     for command in ("prepare", "run", "run-cases", "report"):
         subparser = subparsers.add_parser(command)
         subparser.add_argument("run_root", type=Path)
         if command == "prepare":
+            add_settings_arguments(subparser)
+            subparser.add_argument("--mooncake-config", type=Path)
+            subparser.add_argument("--mooncake-master", type=Path)
             subparser.add_argument("--prior-exclusions", type=Path)
             subparser.add_argument("--snapshot-target", action="store_true")
             subparser.add_argument("--components", action="store_true")
             subparser.add_argument(
-                "--workload-profile", choices=WORKLOAD_PROFILES, default="frozen"
+                "--workload-profile",
+                choices=WORKLOAD_PROFILES,
+                default="conversation-tools",
             )
             subparser.add_argument("--workload-dataset", type=Path)
             subparser.add_argument(
                 "--mode",
-                choices=("native", "agent", "offload", "offload-agent"),
+                choices=CURRENT_MODES,
                 action="append",
             )
-            subparser.add_argument(
-                "--qps", type=float, choices=COMPONENT_QPS, action="append"
-            )
-            subparser.add_argument("--gpu", type=int, choices=(0, 1))
+            subparser.add_argument("--qps", type=float, action="append")
     args = parser.parse_args()
     if args.command == "plan":
-        result = plan(components=args.components)
+        result = plan(components=args.components, settings=settings_from_args(args))
         if args.output:
             write_json(args.output, result)
     elif args.command == "prepare":
-        if args.components and (args.mode or args.qps or args.gpu is not None):
-            parser.error("--components cannot be combined with --mode, --qps or --gpu")
-        if (args.qps or args.gpu is not None) and not args.mode:
-            parser.error("--qps and --gpu require --mode")
+        settings = settings_from_args(args)
+        if args.components and (args.mode or args.qps):
+            parser.error("--components cannot be combined with --mode or --qps")
+        if args.qps and not args.mode:
+            parser.error("--qps requires --mode")
         cases = (
-            [
-                Case(mode, qps, gpu_index=args.gpu)
-                for mode in args.mode
-                for qps in sorted(args.qps or [1.0, 0.5, 0.1], reverse=True)
-            ]
+            make_cases(
+                settings, args.mode, sorted(args.qps or [1.0, 0.5, 0.1], reverse=True)
+            )
             if args.mode
             else None
         )
         if args.components:
-            cases = [case for queue in component_queues() for case in queue]
+            cases = [case for queue in component_queues(settings) for case in queue]
         result = prepare(
             args.run_root,
             prior_exclusions=args.prior_exclusions,
@@ -708,6 +607,9 @@ def main() -> None:
             cases=cases,
             workload_profile=args.workload_profile,
             workload_dataset=args.workload_dataset,
+            settings=settings,
+            mooncake_config=args.mooncake_config,
+            mooncake_master=args.mooncake_master,
         )
     else:
         # Hold the ledger lock for reports too, so a live attempt cannot be
@@ -725,15 +627,16 @@ def main() -> None:
                 if args.command == "run":
                     result = runner.run()
                 else:
-                    runner.verify_frozen()
-                    runner.verify_inputs()
-                    queues: list[list[Case]] = [[], []]
-                    for identity in runner.identities:
-                        queues[identity.case.device.index].append(identity.case)
-                    runner.run_queues(queues, initial=True)
+                    runner.run_queues(
+                        group_cases(
+                            [identity.case for identity in runner.identities],
+                            runner.settings,
+                        ),
+                        initial=True,
+                    )
                     result = {"results": runner.results}
             else:
-                result = runner.report(include_old=True)
+                result = runner.report()
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

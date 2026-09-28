@@ -71,8 +71,6 @@ def shared_measurement_start(config: dict) -> dict:
     records = [
         json.loads(line) for line in path.read_text().splitlines() if line.strip()
     ]
-    if not records or records[0].get("manifest_sha256") != config["manifest_sha256"]:
-        return {"timestamp": None, "reason": "budget_ledger_identity_mismatch"}
     starts = [
         (index, row)
         for index, row in enumerate(records, 1)

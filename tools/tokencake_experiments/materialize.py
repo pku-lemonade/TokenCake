@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Snapshot a JSON workload, its client, and frozen analysis helpers."""
+"""Snapshot the current repository's JSON workload, client, and analyzer."""
 
 import argparse
 import hashlib
@@ -9,32 +9,22 @@ import shutil
 import subprocess
 from pathlib import Path
 
-SOURCE_REVISION = "7a608a4e53ea990b2540c93b4d28cb795b905109"
 PACKAGE = Path(__file__).resolve().parent
+ROOT = PACKAGE.parents[1]
 WORKLOAD_PROFILES = ("frozen", "continuation", "conversation", "conversation-tools")
 DATASET_NAME = "workload-dataset.json"
-HELPERS = (
-    "vllm_serving.py",
-    "agent",
-    "tools/tokencake_experiments/__init__.py",
-    "tools/tokencake_experiments/analysis.py",
-    "tools/tokencake_experiments/catalog.py",
-    "tools/tokencake_experiments/commands.py",
-    "tools/tokencake_experiments/evidence.py",
-    "tools/tokencake_experiments/schema.py",
-    "tools/tokencake_experiments/launch_server.py",
-)
+HELPERS = ("dataset.py", "dataset_client.py", "analysis.py")
 
 
-def digest(path: Path) -> str:
+def digest(path):
     checksum = hashlib.sha256()
-    with path.open("rb") as stream:
+    with Path(path).open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             checksum.update(chunk)
     return checksum.hexdigest()
 
 
-def git(root: Path, *args: str, input: str | None = None) -> str:
+def git(root, *args, input=None):
     return subprocess.run(
         ["git", "-C", str(root), *args],
         input=input,
@@ -45,60 +35,26 @@ def git(root: Path, *args: str, input: str | None = None) -> str:
 
 
 def materialize(
-    source: Path,
-    destination: Path,
-    *,
-    workload_profile: str = "frozen",
-    workload_dataset: Path | None = None,
-) -> dict:
+    source, destination, *, workload_profile="frozen", workload_dataset=None
+):
     from tools.tokencake_experiments.dataset import load_dataset
 
     if workload_profile not in WORKLOAD_PROFILES:
         raise ValueError(f"Unknown workload profile: {workload_profile}")
-    dataset_path = (
-        workload_dataset or PACKAGE / "datasets" / f"{workload_profile}.json"
+    source, destination = Path(source).resolve(), Path(destination).resolve()
+    package = source / "tools/tokencake_experiments"
+    dataset_path = Path(
+        workload_dataset or package / "datasets" / f"{workload_profile}.json"
     ).resolve()
-    dataset = load_dataset(dataset_path)
-    if dataset.profile != workload_profile:
-        raise ValueError("Dataset profile does not match workload_profile")
-    source, destination = source.resolve(), destination.resolve()
-    revision = git(source, "rev-parse", "HEAD")
-    if revision != SOURCE_REVISION or git(source, "status", "--porcelain"):
-        raise ValueError("Source must be clean at the frozen revision")
-    if destination.exists():
-        raise FileExistsError(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    git(
-        source,
-        "clone",
-        "--shared",
-        "--no-checkout",
-        "--quiet",
-        str(source),
-        str(destination),
-    )
-    patterns = "\n".join(
-        "/" + name + ("/" if name == "agent" else "") for name in HELPERS
-    )
-    git(
-        destination,
-        "sparse-checkout",
-        "set",
-        "--no-cone",
-        "--stdin",
-        input=patterns + "\n",
-    )
-    git(destination, "checkout", "--detach", SOURCE_REVISION)
-    original = {
-        name: digest(destination / name)
-        for name in git(destination, "ls-files").splitlines()
-        if (destination / name).is_file()
-    }
-    for name in ("dataset.py", "dataset_client.py"):
-        shutil.copyfile(PACKAGE / name, destination / name)
+    load_dataset(dataset_path)
+    original = {name: digest(package / name) for name in HELPERS}
+    from tools.tokencake_experiments.provenance import repository
+
+    revision = repository(source)["commit"]
+    destination.mkdir(parents=True, exist_ok=False)
+    for name in HELPERS:
+        shutil.copyfile(package / name, destination / name)
     shutil.copyfile(dataset_path, destination / DATASET_NAME)
-    if git(source, "status", "--porcelain"):
-        raise RuntimeError("Source worktree changed during materialization")
     return {
         "source_revision": revision,
         "source": str(source),
@@ -108,15 +64,14 @@ def materialize(
         "workload_dataset_sha256": digest(destination / DATASET_NAME),
         "source_helpers": original,
         "materialized_helpers": {
-            name: digest(destination / name)
-            for name in (*original, "dataset.py", "dataset_client.py", DATASET_NAME)
+            name: digest(destination / name) for name in (*HELPERS, DATASET_NAME)
         },
     }
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source", type=Path, default=ROOT)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--workload-dataset", type=Path)
     parser.add_argument(
@@ -133,7 +88,6 @@ def main() -> None:
     with args.output.open("x") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")
-    print(f"Materialized launcher: {args.destination}")
 
 
 if __name__ == "__main__":

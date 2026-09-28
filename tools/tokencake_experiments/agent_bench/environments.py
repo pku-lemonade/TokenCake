@@ -91,7 +91,7 @@ def run(
     manager: str = "uv",
 ):
     from .experiment import tasks_for, terminate
-    from .service import worker_environment
+    from .service import worker_environment, worker_python
 
     manifest = json.loads(manifest_path.read_text())
     tasks = tasks_for(manifest, "swe", subset)
@@ -152,7 +152,7 @@ def run(
                 try:
                     process = subprocess.Popen(
                         [
-                            str(platform / "environments/grading/.venv/bin/python"),
+                            worker_python(platform, grading=True),
                             "-m",
                             "tools.tokencake_experiments.agent_bench.environments",
                             "--one",

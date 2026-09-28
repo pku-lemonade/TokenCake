@@ -2,21 +2,20 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Compare two independent GPU services under one shared wall-clock budget."""
 
-import fcntl
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack, contextmanager
 
 from .budget import Budget
-from .experiment import preflight_environments, run_tasks
+from .experiment import run_tasks
 from .inputs import digest
 from .service import Service
 from .transport import write_json
 
 
 @contextmanager
-def paired_services(platform, output, modes, gpu_by_mode):
+def paired_services(platform, output, modes, gpu_by_mode, *, model, settings):
     cancelled = threading.Event()
     entered = []
 
@@ -29,6 +28,8 @@ def paired_services(platform, output, modes, gpu_by_mode):
             gpu=gpu,
             port=8060 + 10 * gpu,
             cancel_event=cancelled,
+            model=model,
+            settings=settings,
         )
         try:
             server.__enter__()
@@ -109,7 +110,7 @@ def parallel_task_runs(
 def run_parallel(args, manifest, tasks):
     gpu_by_mode = manifest["pilot"]["gpu_by_mode"]
     if not 1 <= len(args.modes) <= 2:
-        raise ValueError("Run one comparison pair at a time, then score and review it")
+        raise ValueError("Parallel execution supports one or two modes")
     gpus = [gpu_by_mode[mode] for mode in args.modes]
     if len(set(gpus)) != len(gpus):
         raise ValueError("Parallel comparison modes require distinct GPUs")
@@ -119,11 +120,6 @@ def run_parallel(args, manifest, tasks):
     budget = None
     try:
         with ExitStack() as stack:
-            for gpu in sorted(gpus):
-                lock = stack.enter_context(
-                    (args.platform / f"gpu-{gpu}.lock").open("a")
-                )
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             budget = stack.enter_context(
                 Budget(
                     args.budget_ledger,
@@ -134,11 +130,15 @@ def run_parallel(args, manifest, tasks):
             remaining = min(args.budget_seconds, budget.remaining_s)
             if remaining <= 0:
                 raise ValueError("Campaign measurement budget exhausted")
-            if args.environment_root is not None:
-                for mode in args.modes:
-                    preflight_environments(tasks, args.environment_root / mode)
             servers = stack.enter_context(
-                paired_services(args.platform, args.output, args.modes, gpu_by_mode)
+                paired_services(
+                    args.platform,
+                    args.output,
+                    args.modes,
+                    gpu_by_mode,
+                    model=manifest["model_path"],
+                    settings=manifest["service"],
+                )
             )
             with budget.measurement(f"{args.output}:parallel:{','.join(args.modes)}"):
                 started = time.monotonic()

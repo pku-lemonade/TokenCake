@@ -52,7 +52,7 @@ def test_controller_launch_failure_records_active_and_unstarted_tasks(
     monkeypatch.setattr(experiment.subprocess, "Popen", launch)
     summary = experiment.run_tasks(
         tmp_path,
-        {"pilot": {"workers": 2, "arrival": "fixture"}},
+        {"pilot": {"workers": 2, "arrival": "fixture"}, "model_path": "/models/test"},
         "bfcl",
         [{"id": str(index)} for index in range(3)],
         "base",
@@ -101,7 +101,7 @@ Path(sys.argv[2], 'result.json').write_text(json.dumps(result))
     monkeypatch.setattr(experiment.subprocess, "Popen", launch)
     summary = experiment.run_tasks(
         tmp_path,
-        {"pilot": {"workers": 16, "arrival": "fixture"}},
+        {"pilot": {"workers": 16, "arrival": "fixture"}, "model_path": "/models/test"},
         "bfcl",
         [{"id": str(index)} for index in range(20)],
         "base",
@@ -140,7 +140,7 @@ def test_supervisor_deadline_kills_worker_and_preserves_remaining_tasks(
     monkeypatch.setattr(experiment, "CLEANUP_GRACE_S", 0.01)
     summary = experiment.run_tasks(
         tmp_path,
-        {"pilot": {"workers": 1, "arrival": "fixture"}},
+        {"pilot": {"workers": 1, "arrival": "fixture"}, "model_path": "/models/test"},
         "bfcl",
         [{"id": "first"}, {"id": "second"}],
         "base",
@@ -172,8 +172,8 @@ def test_snapshot_restores_ignored_builds_dependencies_and_caches(tmp_path):
     assert not list((directory / "cache").iterdir())
     with (directory / "prepared-state.tar").open("ab") as stream:
         stream.write(b"tampered")
-    with pytest.raises(ValueError, match="snapshot changed"):
-        swe_local.restore_prepared_state(directory)
+    swe_local.restore_prepared_state(directory)
+    assert (directory / "repo/ignored.so").read_bytes() == b"original extension"
     assert (directory / "repo/ignored.so").exists()
 
 
@@ -330,9 +330,10 @@ def test_evaluation_locale_setup_preserves_patch_and_test_exit_code(tmp_path):
 
 
 def test_conda_does_not_import_requests_from_the_task_checkout(tmp_path):
-    conda = Path("/root/miniconda3/bin/conda")
-    if not conda.is_file():
-        pytest.skip("Requires the benchmark server's Miniconda installation")
+    try:
+        conda = swe_local.conda_executable()
+    except FileNotFoundError:
+        pytest.skip("Requires conda on PATH or TC_BENCH_CONDA")
     directory = tmp_path / "task"
     repo = directory / "repo"
     repo.mkdir(parents=True)
@@ -353,7 +354,7 @@ def test_conda_does_not_import_requests_from_the_task_checkout(tmp_path):
     assert environment["PYTHONPATH"] == str(repo)
 
 
-def test_cached_repository_checks_out_frozen_content_and_rejects_changed_ref(tmp_path):
+def test_cached_repository_uses_requested_commit_without_ref_lock(tmp_path):
     def git(*args, cwd=None):
         return subprocess.check_output(
             ["git", *map(str, args)], cwd=cwd, text=True, stderr=subprocess.DEVNULL
@@ -414,8 +415,7 @@ def test_cached_repository_checks_out_frozen_content_and_rejects_changed_ref(tmp
     assert git("rev-parse", "HEAD", cwd=checkout) == original
 
     git("--git-dir", cache / "repo.git", "update-ref", "refs/heads/frozen-base", later)
-    with pytest.raises(ValueError, match="cache revision changed"):
-        swe_local.repository_source(tmp_path, task)
+    assert swe_local.repository_source(tmp_path, task) == str(cache / "repo.git")
 
 
 def test_application_result_survives_cleanup_failure(tmp_path, monkeypatch):
@@ -446,6 +446,7 @@ def test_application_result_survives_cleanup_failure(tmp_path, monkeypatch):
             {
                 "benchmark": "bfcl",
                 "base_url": "http://localhost:1/v1",
+                "model_path": "/models/test",
                 "task": {},
                 "context": {
                     "task_id": "fixture",
@@ -496,7 +497,7 @@ def test_empty_submission_does_not_invoke_tests_or_count_as_resolved(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_budget_is_shared_and_unclean_measurements_require_reconciliation(tmp_path):
+def test_budget_can_resume_after_interruption_and_config_changes(tmp_path):
     path = tmp_path / "budget.jsonl"
     with Budget(path, "manifest", 10) as budget:
         with budget.measurement("bfcl"):
@@ -506,11 +507,9 @@ def test_budget_is_shared_and_unclean_measurements_require_reconciliation(tmp_pa
         assert budget.used_s == used
         assert budget.remaining_s == 10 - used
         budget.record({"event": "start", "label": "interrupted-swe"})
-    with (
-        pytest.raises(ValueError, match="terminal budget record"),
-        Budget(path, "manifest", 10),
-    ):
-        pass
+    with Budget(path, "changed-manifest", 20) as budget:
+        assert budget.used_s == used
+        assert budget.remaining_s == 20 - used
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -519,10 +518,12 @@ def test_parallel_pair_overlaps_and_charges_one_budget_interval(
 ):
     manifest_path = tmp_path / "manifest.json"
     manifest = {
+        "model_path": "/models/test",
+        "service": {"cpu_kv_gib": 16},
         "pilot": {
             "gpu_by_mode": {"base": 0, "agent_offload": 1},
             "measurement_budget_s": 10,
-        }
+        },
     }
     write_json(manifest_path, manifest)
     args = SimpleNamespace(
@@ -540,7 +541,9 @@ def test_parallel_pair_overlaps_and_charges_one_budget_interval(
     intervals = {}
 
     @contextmanager
-    def services(*_):
+    def services(*_, model, settings):
+        assert model == manifest["model_path"]
+        assert settings == manifest["service"]
         yield {
             mode: SimpleNamespace(port=index + 1)
             for index, mode in enumerate(args.modes)

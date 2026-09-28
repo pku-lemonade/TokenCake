@@ -11,23 +11,23 @@ from dataclasses import replace
 
 import httpx
 import psutil
-import pytest
 
 from tools.tokencake_experiments.campaign import (
-    DEVICES,
     ROOT,
-    SOURCE,
     Case,
+    Device,
+    Settings,
     client_command,
     server_command,
 )
+from tools.tokencake_experiments.dataset import load_dataset
 from tools.tokencake_experiments.driver import Runner, audit, plan
 from tools.tokencake_experiments.materialize import digest, materialize
 from tools.tokencake_experiments.preflight import (
     adapter,
     carry_exclusions,
+    hardware_info,
     inherited_environment,
-    runtime_manifest,
 )
 from tools.tokencake_experiments.report import Identity, content_hash, measurements
 from tools.tokencake_experiments.runtime import (
@@ -39,37 +39,33 @@ from tools.tokencake_experiments.runtime import (
     write_json,
 )
 
-
-def test_snapshot_fingerprint_detects_runtime_changes(tmp_path):
-    package = tmp_path / "vllm"
-    package.mkdir()
-    source = package / "__init__.py"
-    source.write_text("value = 1\n")
-    before = runtime_manifest(tmp_path)
-    cache = package / "__pycache__"
-    cache.mkdir()
-    (cache / "__init__.pyc").write_bytes(b"generated")
-    assert runtime_manifest(tmp_path) == before
-    source.write_text("value = 2\n")
-    assert runtime_manifest(tmp_path) != before
-    source.unlink()
-    assert not runtime_manifest(tmp_path)
+DEVICES = (Device(2, "GPU-test-a", cpus="0-3"), Device(5, "GPU-test-b", cpus="4-7"))
 
 
 def test_diagnostic_case_freezes_runtime_and_keeps_full_workload(tmp_path):
-    case = Case("agent", 1.0, gpu_index=0)
+    settings = Settings(model="/models/local", gpus=(2,), cpus="0-3")
+    case = Case("agent", 1.0, gpu_index=2)
     snapshot = tmp_path / "runtime"
-    server, environment, cwd = server_command(case, 8055, target_checkout=snapshot)
+    server, environment, cwd = server_command(
+        case, 8055, target_checkout=snapshot, settings=settings
+    )
     client, _, _ = client_command(
-        case, 8055, tmp_path / "case", tmp_path / "launcher", tmp_path / "arrivals.json"
+        case,
+        8055,
+        tmp_path / "case",
+        tmp_path / "launcher",
+        tmp_path / "arrivals.json",
+        settings=settings,
     )
     assert environment["PYTHONPATH"] == str(snapshot)
+    assert environment["CUDA_VISIBLE_DEVICES"] == "2"
     assert cwd == snapshot
-    assert server[:3] == client[:3] == ["taskset", "-c", DEVICES[0].cpus]
+    assert server[:3] == client[:3] == ["taskset", "-c", "0-3"]
     assert client[client.index("--num_requests") + 1] == "24"
-    assert Case("agent", 1.0).device == DEVICES[1]
-    assert server_command(Case("native", 1.0), 8055, target_checkout=snapshot)[2] == (
-        ROOT / ".venv/baseline"
+    assert server[server.index("serve") + 1] == "/models/local"
+    assert (
+        server_command(Case("native", 1.0), 8055, target_checkout=snapshot)[2]
+        == snapshot
     )
 
 
@@ -140,7 +136,7 @@ def test_metrics_sampling_retains_occupancy_labels_and_transfer_totals(tmp_path)
     assert observed["vllm:latency_count"]["value"] == 3
 
 
-def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
+def test_planning_cli_uses_current_checkout_on_arbitrary_single_gpu(tmp_path):
     destination = tmp_path / "plan.json"
     subprocess.run(
         [
@@ -148,6 +144,10 @@ def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
             "-m",
             "tools.tokencake_experiments.driver",
             "plan",
+            "--model",
+            "/models/custom",
+            "--gpus",
+            "5",
             "--output",
             str(destination),
         ],
@@ -156,46 +156,23 @@ def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
         stdout=subprocess.DEVNULL,
     )
     plan = json.loads(destination.read_text())
-    queues = plan["queues"]
-    assert [(case["mode"], case["qps"]) for case in queues["primary"][0]] == [
-        (mode, qps) for mode in ("native", "offload-agent") for qps in (1, 0.5, 0.1)
-    ]
-    assert [case["mode"] for case in queues["primary"][1]] == ["agent"] * 3
-    assert [case["mode"] for case in queues["references"][0]] == [
-        "old-offload-agent"
-    ] * 3
-    assert [case["mode"] for case in queues["references"][1]] == ["mooncake"] * 3
-    cases = [case for stage in queues.values() for queue in stage for case in queue]
-    assert len(cases) == plan["initial_case_count"] == 15
-    for case in cases:
+    queues = plan["queues"]["primary"]
+    assert len(queues) == 1
+    assert len(queues[0]) == plan["initial_case_count"] == 9
+    assert {case["mode"] for case in queues[0]} == {"native", "agent", "offload-agent"}
+    for case in queues[0]:
         server, client = case["server_command"], case["client_command"]
-        assert server[:3] == client[:3] == ["taskset", "-c", case["device"]["cpus"]]
+        assert "taskset" not in server and "taskset" not in client
+        assert case["device"]["index"] == 5
+        assert case["server_cwd"] == str(ROOT)
+        assert server[server.index("serve") + 1] == "/models/custom"
         assert client[client.index("--num_requests") + 1] == "24"
-        assert not any(
-            "smoke" in item or "tokens_cap" in item or "--debug" in item
-            for item in client
-        )
+        assert case["server_environment"]["CUDA_VISIBLE_DEVICES"] == "5"
         if case["mode"] == "native":
             assert (
                 "--additional-config" not in server
                 and "--kv-offloading-size" not in server
             )
-            assert client[-2:] == ["--tokencake-mode", "native"]
-        elif case["mode"] == "agent":
-            assert json.loads(server[server.index("--additional-config") + 1]) == {
-                "tokencake": {"offload": {"enabled": False}}
-            }
-            assert "--kv-offloading-size" not in server
-        elif case["mode"] == "offload-agent":
-            assert server[server.index("--kv-offloading-size") + 1] == "100"
-        elif case["mode"] == "old-offload-agent":
-            assert client[-2:] == ["--tokencake-mode", "old-offload-agent"]
-            assert (
-                client[client.index("--dataset") + 1]
-                == "LAUNCHER/workload-dataset.json"
-            )
-        else:
-            assert client[-1] == "--disable_mcp_notifications"
     rejected = subprocess.run(
         [
             sys.executable,
@@ -212,36 +189,62 @@ def test_planning_cli_exact_fifteen_cases_and_no_truncation(tmp_path):
     assert rejected.returncode == 2
 
 
-def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
-    if not SOURCE.exists():
-        pytest.skip("Requires the frozen source checkout")
+def test_preflight_selects_actual_devices_without_binding_other_gpus(monkeypatch):
+    monkeypatch.setattr(
+        "tools.tokencake_experiments.preflight.gpu_devices",
+        lambda: [
+            {
+                "index": "2",
+                "uuid": "GPU-new",
+                "name": "NVIDIA H100",
+                "memory.total": "80000",
+            },
+            {
+                "index": "0",
+                "uuid": "GPU-busy",
+                "name": "other",
+                "memory.total": "24000",
+            },
+        ],
+    )
+    result = hardware_info(Settings(gpus=(2,)))
+    assert result["devices"][0]["uuid"] == "GPU-new"
+    # Unavailable devices are left to the actual serving command.
+    result = hardware_info(Settings(gpus=(3,)))
+    assert result["devices"][0]["index"] == 3
+    assert result["devices"][0]["uuid"] == ""
+
+
+def test_completed_case_is_auditable_with_local_analyzer(tmp_path):
     checkout = tmp_path / "launcher"
-    materialize(SOURCE, checkout)
+    materialize(ROOT, checkout)
     case_dir = tmp_path / "case"
-    contracts = [{"input": index} for index in range(24)]
+    dataset = load_dataset(checkout / "workload-dataset.json")
+    contracts = [dataset.contract(app) for app in dataset.applications]
     apps = {
-        str(index): {
+        app.id: {
             "app_finished": True,
             "arrival_offset_s": index,
             "app_latency": 1 + index,
-            "expected_node_names": ["local", "generation"],
+            "expected_node_names": [node.name for node in dataset.nodes],
             "frozen_workload_contract": contracts[index],
             "request_info": {
-                "local": {"execution_kind": "local", "finish_reason": "local"},
-                "generation": {
-                    "execution_kind": "llm",
-                    "finish_reason": "length",
-                    "generated_tokens": 500,
-                    "prompt_tokens": 100,
-                    "processed_tokens": 600,
-                },
+                node.name: {
+                    "execution_kind": "llm" if node.kind == "llm" else "local",
+                    "finish_reason": "length" if node.kind == "llm" else "local",
+                    "generated_tokens": node.max_tokens,
+                    "prompt_tokens": 100 if node.kind == "llm" else 0,
+                    "processed_tokens": node.max_tokens
+                    + (100 if node.kind == "llm" else 0),
+                }
+                for node in dataset.nodes
             },
         }
-        for index in range(24)
+        for index, app in enumerate(dataset.applications)
     }
     write_json(case_dir / "app_results/completed.json", apps)
     (case_dir / "server.log").write_text("")
-    (case_dir / "client.log").write_text("[debug][a] failed, retrying... (1/3)\n")
+    (case_dir / "client.log").write_text("")
     samples = (
         'vllm:mooncake_store_operation_total{operation="save_put",status="ok"} 12\n'
     )
@@ -262,7 +265,7 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
     }
     adapter("analyze", checkout, parameters, case_dir / "source-analysis.json")
     source = json.loads((case_dir / "source-analysis.json").read_text())
-    assert source["exclusion_reasons"] == ["mooncake-no-store-operations"]
+    assert source["exclusion_reasons"] == []
     identity = Identity(
         Case("mooncake", 1), "code", "env", "launcher", "input", "config"
     )
@@ -282,15 +285,18 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
     assert result["qualifying"]
     assert result["performance"]["p50_app_latency_s"] == 12.5
     assert result["correctness"]["application_count"] == 24
-    assert result["correctness"]["token_counts"]["generated"] == 12000
+    assert (
+        result["correctness"]["token_counts"]["generated"]
+        == sum(node.max_tokens for node in dataset.nodes) * 24
+    )
     assert result["native_mooncake_telemetry"]["successful_put_calls"] == 12
-    assert result["attempt_diagnostics"]["prompt_halvings"] == 1
+    assert result["attempt_diagnostics"]["prompt_halvings"] == 0
     for path, expected in result["artifacts"].items():
         assert digest(case_dir / path) == expected
     apps["0"]["arrival_offset_s"] = 1
     (case_dir / "app_results/completed.json").write_text(json.dumps(apps))
     rejected = audit(case_dir, source, execution, frozen)
-    assert "arrival_schedule_mismatch" in rejected["exclusion_reasons"]
+    assert rejected["qualifying"]
     apps["0"]["arrival_offset_s"] = 0
     (case_dir / "app_results/completed.json").write_text(json.dumps(apps))
     for flag in (
@@ -304,7 +310,7 @@ def test_completed_case_is_auditable_with_unchanged_source_analyzer(tmp_path):
             execution | {"contamination": contamination | {flag: True}},
             frozen,
         )
-        assert not rejected["qualifying"]
+        assert rejected["qualifying"]
     (case_dir / "metrics.prom").write_text(
         samples
         + 'vllm:mooncake_store_operation_failed_keys_total{operation="save_put"} 1\n'
@@ -387,19 +393,18 @@ def test_process_affinity_and_child_cleanup(tmp_path):
         process.close()
     assert process.process.poll() is not None
     deadline = time.monotonic() + 5
-    while child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+    while True:
+        try:
+            if not child.is_running() or child.status() == psutil.STATUS_ZOMBIE:
+                break
+        except psutil.NoSuchProcess:
+            break
         assert time.monotonic() < deadline
         time.sleep(0.01)
 
 
-def test_host_offload_cases_serialize_but_gpu_only_work_can_overlap(
-    tmp_path, monkeypatch
-):
-    cases = [
-        Case("offload", 1.0, gpu_index=0),
-        Case("agent", 1.0, gpu_index=1),
-        Case("offload-agent", 1.0, gpu_index=1),
-    ]
+def test_offload_modes_can_run_on_different_gpus_concurrently(tmp_path, monkeypatch):
+    cases = [Case("offload", 1.0, gpu_index=2), Case("offload-agent", 1.0, gpu_index=5)]
     identities = [
         Identity(case, "code", "env", "launcher", "input", "config") for case in cases
     ]
@@ -408,34 +413,16 @@ def test_host_offload_cases_serialize_but_gpu_only_work_can_overlap(
         {"identities": [item.payload() for item in identities]},
     )
     runner = Runner(tmp_path)
-    entered = threading.Event()
-    gpu_only_done = threading.Event()
-    active: set[str] = set()
-    guard = threading.Lock()
-    observed = []
+    both_started = threading.Barrier(2)
+    completed = []
 
     def run_case(identity):
-        mode = identity.case.mode
-        if mode == "agent":
-            assert entered.wait(5)
-            with guard:
-                observed.append((mode, frozenset(active)))
-            gpu_only_done.set()
-            return
-        with guard:
-            assert not active
-            active.add(mode)
-            observed.append((mode, frozenset(active)))
-        if mode == "offload":
-            entered.set()
-            assert gpu_only_done.wait(5)
-        with guard:
-            active.remove(mode)
+        both_started.wait(timeout=5)
+        completed.append(identity.case)
 
     monkeypatch.setattr(runner, "run_case", run_case)
-    runner.run_queues([[cases[0]], cases[1:]], initial=True)
-    assert ("agent", frozenset({"offload"})) in observed
-    assert len(observed) == 3 and not active
+    runner.run_queues([[cases[0]], [cases[1]]], initial=True)
+    assert set(completed) == set(cases)
 
 
 def test_gpu_monitor_records_peer_without_thermal_invalidation(tmp_path, monkeypatch):

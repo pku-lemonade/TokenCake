@@ -17,7 +17,6 @@ from tools.tokencake_experiments.component_matrix import (
     LABELS as MODE_LABELS,
 )
 from tools.tokencake_experiments.component_matrix import (
-    LOADS,
     MODES,
     group_runs,
 )
@@ -34,6 +33,25 @@ def main():
     rows = json.loads(args.data.read_text())
     groups = group_runs(rows)
     args.output.mkdir(parents=True, exist_ok=False)
+    if not groups:
+        print("No completed cases to plot")
+        return
+    loads = sorted({qps for _, qps in groups})
+    modes = tuple(mode for mode in MODES if any(key[0] == mode for key in groups))
+    labels = tuple(MODE_LABELS[mode] for mode in modes)
+    colors = tuple(COLORS[MODES.index(mode)] for mode in modes)
+
+    def measurement(row, getter):
+        try:
+            value = getter(row)
+            return float(value) if value is not None else np.nan
+        except (KeyError, TypeError, ZeroDivisionError):
+            return np.nan
+
+    def e2e(mode, qps):
+        values = [r["performance"]["total_e2e_s"] for r in groups.get((mode, qps), [])]
+        return median(values) if values else np.nan
+
     plt.rcParams.update(
         {
             "font.size": 10,
@@ -49,14 +67,20 @@ def main():
         plt.close(fig)
 
     def representative_run(mode, qps):
-        group = groups[mode, qps]
+        group = groups.get((mode, qps), [])
+        if not group:
+            return {}
         return sorted(group, key=lambda r: r["performance"]["total_e2e_s"])[
             len(group) // 2
         ]
 
     def plot(ax, getter, title, ylabel):
-        for mode, label, color in zip(MODES, LABELS, COLORS):
-            values = [[getter(row) for row in groups[mode, qps]] for qps in LOADS]
+        for mode, label, color in zip(modes, labels, colors):
+            values = [
+                [measurement(row, getter) for row in groups.get((mode, qps), [])]
+                or [np.nan]
+                for qps in loads
+            ]
             centers = np.array([median(value) for value in values])
             errors = np.array(
                 [
@@ -65,7 +89,7 @@ def main():
                 ]
             )
             ax.errorbar(
-                LOADS,
+                loads,
                 centers,
                 yerr=errors,
                 marker="o",
@@ -76,7 +100,8 @@ def main():
                 label=label,
             )
         ax.set_xscale("log")
-        ax.set_xticks(LOADS, [str(value) for value in LOADS])
+        ax.set_xlim(min(loads) * 0.8, max(loads) * 1.2)
+        ax.set_xticks(loads, [str(value) for value in loads])
         ax.set_xlabel("Offered application QPS")
         ax.set_ylabel(ylabel)
         ax.set_title(title)
@@ -87,13 +112,14 @@ def main():
     for ax, (field, title) in zip(
         axes,
         (
-            ("total_e2e_s", "24-DAG batch E2E"),
+            ("total_e2e_s", "DAG batch E2E"),
             ("average_app_latency_s", "Mean application latency"),
             ("p95_app_latency_s", "P95 application latency"),
         ),
     ):
         plot(ax, lambda r, field=field: r["performance"][field], title, "Seconds")
-    axes[0].legend(fontsize=9)
+    if axes[0].get_legend_handles_labels()[0]:
+        axes[0].legend(fontsize=9)
     save(fig, "latency")
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4), layout="constrained")
@@ -121,51 +147,62 @@ def main():
     save(fig, "throughput-memory")
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4), layout="constrained")
-    for mode, label, color in zip(MODES[1:], LABELS[1:], COLORS[1:]):
+    for mode, label, color in (
+        (mode, label, color)
+        for mode, label, color in zip(modes, labels, colors)
+        if mode != "native"
+    ):
         improvements = []
-        for qps in LOADS:
-            base = median(
-                r["performance"]["total_e2e_s"] for r in groups["native", qps]
-            )
-            value = median(r["performance"]["total_e2e_s"] for r in groups[mode, qps])
+        for qps in loads:
+            base = e2e("native", qps)
+            value = e2e(mode, qps)
             improvements.append(100 * (1 - value / base))
-        axes[0].plot(LOADS, improvements, marker="o", color=color, label=label)
-    axes[0].axhline(25, color="#777777", linestyle=":", label="25% reference")
+        axes[0].plot(loads, improvements, marker="o", color=color, label=label)
     axes[0].set_ylabel("E2E reduction from base (%)")
     axes[0].legend(fontsize=9)
     interactions = []
-    for qps in LOADS:
-        t = {
-            mode: median(r["performance"]["total_e2e_s"] for r in groups[mode, qps])
-            for mode in MODES
-        }
+    for qps in loads:
+        t = {mode: e2e(mode, qps) for mode in MODES}
         interactions.append(
             t["agent"] + t["offload"] - t["native"] - t["offload-agent"]
         )
-    axes[1].plot(LOADS, interactions, marker="s", color="#43805c")
+    axes[1].plot(loads, interactions, marker="s", color="#43805c")
     axes[1].axhline(0, color="#777777", linestyle=":")
     axes[1].set_ylabel("Interaction: Ta + To - Tb - Tf (s)")
     axes[1].set_title("Positive values indicate added combined benefit")
     for ax in axes:
         ax.set_xscale("log")
-        ax.set_xticks(LOADS, [str(value) for value in LOADS])
+        ax.set_xlim(min(loads) * 0.8, max(loads) * 1.2)
+        ax.set_xticks(loads, [str(value) for value in loads])
         ax.set_xlabel("Offered application QPS")
         ax.grid(axis="y", alpha=0.2)
     save(fig, "component-effects")
 
-    fig, axes = plt.subplots(1, 5, figsize=(17, 4), layout="constrained", sharey=True)
+    fig, axes = plt.subplots(
+        1,
+        len(loads),
+        figsize=(max(4, 3.4 * len(loads)), 4),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    axes = axes.ravel()
     sources = ("local_compute", "local_cache_hit", "external_kv_transfer")
     source_colors = ("#777777", "#398557", "#d6a137")
-    for ax, qps in zip(axes, LOADS):
-        bottom = np.zeros(4)
+    for ax, qps in zip(axes, loads):
+        bottom = np.zeros(len(modes))
         for source, color in zip(sources, source_colors):
             values = np.array(
                 [
-                    representative_run(mode, qps)["first_prefill_sources"][source] / 1e6
-                    for mode in MODES
+                    measurement(
+                        representative_run(mode, qps),
+                        lambda r, source=source: r["first_prefill_sources"][source]
+                        / 1e6,
+                    )
+                    for mode in modes
                 ]
             )
-            ax.bar(LABELS, values, bottom=bottom, label=source, color=color)
+            ax.bar(labels, values, bottom=bottom, label=source, color=color)
             bottom += values
         ax.set_title(f"QPS {qps}")
         ax.tick_params(axis="x", labelrotation=45)
@@ -180,10 +217,20 @@ def main():
     )
     save(fig, "prefill-sources")
 
-    fig, axes = plt.subplots(1, 5, figsize=(17, 4), layout="constrained", sharey=True)
-    for ax, qps in zip(axes, LOADS):
-        for mode, label, color in zip(MODES, LABELS, COLORS):
-            values = sorted(representative_run(mode, qps)["application_latencies_s"])
+    fig, axes = plt.subplots(
+        1,
+        len(loads),
+        figsize=(max(4, 3.4 * len(loads)), 4),
+        layout="constrained",
+        sharey=True,
+        squeeze=False,
+    )
+    axes = axes.ravel()
+    for ax, qps in zip(axes, loads):
+        for mode, label, color in zip(modes, labels, colors):
+            values = sorted(
+                representative_run(mode, qps).get("application_latencies_s", [])
+            )
             ax.step(
                 values,
                 np.arange(1, len(values) + 1) / len(values),

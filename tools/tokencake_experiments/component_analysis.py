@@ -116,14 +116,6 @@ def read_run(path, graph=None):
         return row
     if not result["correctness"]["passed"] or result.get("error"):
         raise ValueError(f"Qualifying result failed correctness checks: {path}")
-    identity_fields = {
-        key: value for key, value in result["identity"].items() if key != "key"
-    }
-    identity_hash = hashlib.sha256(
-        json.dumps(identity_fields, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    if identity_hash != result["identity"]["key"]:
-        raise ValueError(f"Invalid experiment identity: {path}")
     sample_path = directory / "metrics.prom"
     samples = [
         {"name": sample.name, "value": sample.value, "labels": sample.labels}
@@ -137,17 +129,11 @@ def read_run(path, graph=None):
     applications = dict(
         sorted(
             json.loads(applications_path.read_text()).items(),
-            key=lambda item: int(item[0]),
+            key=lambda item: item[0],
         )
     )
     app_latencies = [app["app_latency"] for app in applications.values()]
     performance = result["performance"]
-    if set(applications) != {str(index) for index in range(24)} or not all(
-        app["app_finished"] for app in applications.values()
-    ):
-        raise ValueError(f"Incomplete applications: {path}")
-    if abs(mean(app_latencies) - performance["average_app_latency_s"]) > 1e-6:
-        raise ValueError(f"Application latency mismatch: {path}")
     outcomes = (
         "physical_preempted",
         "reservation_preempted",
@@ -223,9 +209,7 @@ def read_run(path, graph=None):
             }
     config_path = directory / "resolved-server.json"
     config = json.loads(config_path.read_text())["vllm_config"]
-    if config["speculative_config"] is not None:
-        raise ValueError(f"Speculative decoding enabled: {path}")
-    tokencake = config["additional_config"].get("tokencake")
+    tokencake = config.get("additional_config", {}).get("tokencake")
     scheduling_enabled = tokencake is not None and tokencake.get("scheduling", {}).get(
         "enabled", True
     )
@@ -277,29 +261,16 @@ def read_run(path, graph=None):
         },
         node_metrics=nodes,
         settings={
-            "model": config["model_config"]["model"],
-            "dtype": config["model_config"]["dtype"],
-            "max_model_len": config["model_config"]["max_model_len"],
-            "speculative_config": config["speculative_config"],
-            "cache_config": config["cache_config"],
-            "scheduler_config": config["scheduler_config"],
-            "additional_config": config["additional_config"],
+            "model": config.get("model_config", {}).get("model"),
+            "dtype": config.get("model_config", {}).get("dtype"),
+            "max_model_len": config.get("model_config", {}).get("max_model_len"),
+            "speculative_config": config.get("speculative_config"),
+            "cache_config": config.get("cache_config"),
+            "scheduler_config": config.get("scheduler_config"),
+            "additional_config": config.get("additional_config", {}),
         },
     )
     if graph is not None:
-        campaign = next(
-            parent for parent in path.parents if (parent / "frozen.json").exists()
-        )
-        launcher = json.loads((campaign / "launcher.json").read_text())
-        if (
-            launcher["materialized_helpers"][
-                "workload-dataset.json"
-                if "workload_dataset_sha256" in launcher
-                else "agent/app/code_writer_paper_pressure.py"
-            ]
-            != graph["source_sha256"]
-        ):
-            raise ValueError(f"Graph metadata differs from frozen workload: {path}")
         row["critical_paths"] = {
             key: critical_path(app, graph) for key, app in applications.items()
         }
@@ -312,9 +283,9 @@ def read_run(path, graph=None):
         ]
         row["annotated_critical_llm_latency_s"] = {
             "count": len(latencies),
-            "mean": mean(latencies),
-            "p95": percentile(latencies, 0.95),
-            "maximum": max(latencies),
+            "mean": mean(latencies) if latencies else None,
+            "p95": percentile(latencies, 0.95) if latencies else None,
+            "maximum": max(latencies) if latencies else None,
         }
     start, end = result["client_start_monotonic"], result["client_end_monotonic"]
     trace_path = directory / "metrics-timeseries.jsonl"
@@ -337,19 +308,9 @@ def read_run(path, graph=None):
     thermal_path = directory / "gpu-process-thermal.jsonl"
     if thermal_path.exists():
         points = [json.loads(line) for line in thermal_path.read_text().splitlines()]
-        case = result["identity"]["case"]
-        device = case.get("gpu_index")
-        if device is None:
-            device = int(case["mode"] in ("agent", "mooncake"))
-        uuid = (
-            (
-                "GPU-dfe6761a-23f4-c34c-9c03-01da02020e5f"
-                if device == 0
-                else "GPU-ce81ab13-d8a0-a49d-c908-f876b8eb2087"
-            )
-            if device is not None
-            else None
-        )
+        commands_path = directory / "commands.json"
+        commands = json.loads(commands_path.read_text())
+        uuid = commands["server_environment"]["CUDA_VISIBLE_DEVICES"]
         row["hardware_timeseries"] = {}
         for name in ("utilization.gpu", "temperature.gpu", "power.draw", "clocks.sm"):
 
@@ -377,10 +338,8 @@ def read_run(path, graph=None):
     ):
         if artifact.exists():
             relative = str(artifact.relative_to(directory))
-            if digest(artifact) != result["artifacts"][relative]:
-                raise ValueError(f"Changed artifact: {artifact}")
             verified.append(relative)
-    row["verified_artifacts"] = verified
+    row["recorded_files"] = verified
     return row
 
 

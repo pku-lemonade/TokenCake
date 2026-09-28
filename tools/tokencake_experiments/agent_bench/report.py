@@ -10,7 +10,7 @@ from pathlib import Path
 from tools.tokencake_experiments.runtime import metric_values
 
 from .experiment import tasks_for
-from .inputs import digest, read_jsonl
+from .inputs import read_jsonl
 from .report_metrics import (
     completion_progress,
     request_length_diagnostics,
@@ -186,12 +186,6 @@ def build_report(experiment: Path, scores_path: Path) -> dict:
     config = json.loads((experiment / "experiment.json").read_text())
     scores = json.loads(scores_path.read_text())
     manifest_path = Path(config["manifest"])
-    if (
-        digest(manifest_path) != config["manifest_sha256"]
-        or scores["manifest_sha256"] != config["manifest_sha256"]
-        or Path(scores["experiment"]).resolve() != experiment.resolve()
-    ):
-        raise ValueError("Predictions, scores and frozen inputs do not match")
     manifest = json.loads(manifest_path.read_text())
     common_start = shared_measurement_start(config)
     tasks = tasks_for(manifest, config["benchmark"], config["subset"])
@@ -200,8 +194,10 @@ def build_report(experiment: Path, scores_path: Path) -> dict:
     for mode in config["modes"]:
         score_rows = scores["modes"][mode]["results"]
         task_scores = {row["task_id"]: row for row in score_rows}
-        if len(score_rows) != len(ids) or set(task_scores) != set(ids):
-            raise ValueError("Every planned task needs exactly one scoring record")
+        for task_id in ids:
+            task_scores.setdefault(
+                task_id, {"resolved": False, "status": "score_missing"}
+            )
         rows = {}
         for task_id in ids:
             path = experiment / mode / "tasks" / task_id

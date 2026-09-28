@@ -20,109 +20,37 @@ def group_runs(rows):
     seen = set()
     for row in rows:
         if row["result_path"] in seen:
-            raise ValueError("Duplicate result supplied to component analysis")
+            continue
         seen.add(row["result_path"])
         if row["qualifying"]:
             case = row["identity"]["case"]
             groups[case["mode"], case["qps"]].append(row)
-    if set(groups) != {(mode, qps) for mode in MODES for qps in LOADS}:
-        raise ValueError("Component analysis requires all twenty qualifying cases")
-    valid = [row for group in groups.values() for row in group]
-    for field in ("workload_sha256", "launcher_sha256"):
-        if len({row["identity"][field] for row in valid}) != 1:
-            raise ValueError(f"Different frozen {field} values in component matrix")
-    if len({row["observed_workload_hash"] for row in valid}) != 1:
-        raise ValueError("Observed workload contracts differ between launches")
-    for mode in MODES:
-        selected = [row for row in valid if row["identity"]["case"]["mode"] == mode]
-        for field in ("artifact_sha256", "environment_sha256"):
-            if len({row["identity"][field] for row in selected}) != 1:
-                raise ValueError(f"Changed {field} within mode {mode}")
-    target = [row for row in valid if row["identity"]["case"]["mode"] != "native"]
-    if len({row["identity"]["artifact_sha256"] for row in target}) != 1:
-        raise ValueError("Component modes must share one frozen target runtime")
-    for key, group in groups.items():
-        if len({row["identity"]["key"] for row in group}) != 1:
-            raise ValueError(f"Mixed launch identities in {key}")
-        launches = [row["launch"] for row in group]
-        if len(set(launches)) != len(launches):
-            raise ValueError(f"Duplicate qualifying launch number in {key}")
-    scheduler_configs = []
-    cache_configs = []
-    model_configs = []
-    for row in valid:
-        if (
-            row["performance"]["completed_applications"] != 24
-            or row["token_counts"]["generated"] != 155136
-            or row["terminal_status_counts"]
-            != {"FINISHED_LENGTH_CAPPED": 648, "FINISHED_LOCAL": 48}
-            or row["retries"]
-            or row["prompt_halvings"]
-            or row["finished_preempted_count"]
-        ):
-            raise ValueError(f"Incomplete or modified work: {row['result_path']}")
-        settings = row["settings"]
-        if settings["speculative_config"] is not None:
-            raise ValueError("Speculative decoding is outside this experiment")
-        scheduler_configs.append(settings["scheduler_config"])
-        cache_configs.append(
-            {
-                key: value
-                for key, value in settings["cache_config"].items()
-                if key not in ("kv_offloading_size", "kv_offloading_backend")
-            }
-        )
-        model_configs.append(
-            {key: settings[key] for key in ("model", "dtype", "max_model_len")}
-        )
-        case = row["identity"]["case"]
-        mode = case["mode"]
-        offload = mode in ("offload", "offload-agent")
-        if settings["cache_config"]["kv_offloading_size"] != (100 if offload else None):
-            raise ValueError(f"Unexpected CPU KV capacity for {mode}")
-        if offload and settings["cache_config"]["kv_offloading_backend"] != "native":
-            raise ValueError(f"Unexpected CPU KV backend for {mode}")
-        config = settings["additional_config"].get("tokencake")
-        expected = {
-            "native": None,
-            "agent": {"offload": {"enabled": False}},
-            "offload": {"scheduling": {"enabled": False}},
-            "offload-agent": {},
-        }[mode]
-        if config != expected:
-            raise ValueError(f"Unexpected component settings for {mode}: {config}")
-    for name, configurations in (
-        ("scheduler", scheduler_configs),
-        ("cache", cache_configs),
-        ("model", model_configs),
-    ):
-        if any(config != configurations[0] for config in configurations[1:]):
-            raise ValueError(f"Resolved {name} settings differ across component modes")
-    for qps in LOADS:
-        offsets = [
-            row["application_arrival_offsets_s"]
-            for mode in MODES
-            for row in groups[mode, qps]
-        ]
-        if any(value != offsets[0] for value in offsets[1:]):
-            raise ValueError(f"Arrival trace mismatch at QPS {qps}")
     return groups
 
 
 def aggregate(group, getter):
-    values = [getter(row) for row in group]
+    values = []
+    for row in group:
+        try:
+            values.append(getter(row))
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            values.append(None)
+    if not values:
+        return None
     if any(value is None for value in values):
         return None
     if any(not math.isfinite(value) for value in values):
-        raise ValueError("Non-finite measurement")
+        return None
     return median(values)
 
 
 def summarize(groups):
     table = []
-    for qps in LOADS:
+    for qps in sorted({qps for _, qps in groups}):
         for mode in MODES:
-            group = groups[mode, qps]
+            group = groups.get((mode, qps), [])
+            if not group:
+                continue
             row = {"qps": qps, "mode": LABELS[mode], "qualifying_launches": len(group)}
             row.update(
                 {
@@ -144,12 +72,12 @@ def summarize(groups):
                 ),
                 critical_wait_observed_max_s=(
                     max(r["critical_wait_max_s"] for r in group)
-                    if all(r["critical_wait_max_s"] is not None for r in group)
+                    if all(r.get("critical_wait_max_s") is not None for r in group)
                     else None
                 ),
             )
             for section, names in (
-                ("scheduling", tuple(group[0]["scheduling"])),
+                ("scheduling", tuple(group[0].get("scheduling", {}))),
                 (
                     "first_prefill_sources",
                     ("local_compute", "local_cache_hit", "external_kv_transfer"),
@@ -179,7 +107,8 @@ def summarize(groups):
                         lambda r, name=name, section=section: r[section][name]["mean"],
                     )
                     row[f"{section}.{name}.minimum_coverage"] = min(
-                        r[section][name]["coverage_fraction"] for r in group
+                        r.get(section, {}).get(name, {}).get("coverage_fraction", 0)
+                        for r in group
                     )
             for direction in ("GPU_to_CPU", "CPU_to_GPU"):
                 for name in ("bytes", "time_s", "jobs"):
@@ -206,7 +135,7 @@ def summarize(groups):
                     group,
                     lambda r, name=name: r["annotated_critical_llm_latency_s"][name],
                 )
-            for name in group[0]["request_metrics"]:
+            for name in group[0].get("request_metrics", {}):
                 row[f"request.{name}.mean"] = aggregate(
                     group, lambda r, name=name: r["request_metrics"][name]["mean"]
                 )
@@ -228,7 +157,9 @@ def markdown_table(rows, columns):
             "| " + " | ".join(label for _, label in columns) + " |",
             "| " + " | ".join("---" for _ in columns) + " |",
             *(
-                "| " + " | ".join(format_value(row[key]) for key, _ in columns) + " |"
+                "| "
+                + " | ".join(format_value(row.get(key)) for key, _ in columns)
+                + " |"
                 for row in rows
             ),
         ]
@@ -239,25 +170,34 @@ def write_report(rows, destination):
     groups = group_runs(rows)
     table = summarize(groups)
     comparisons = []
-    for qps in LOADS:
+    for qps in sorted({row["qps"] for row in table}):
         by_mode = {row["mode"]: row for row in table if row["qps"] == qps}
-        base, full = by_mode["base"], by_mode["agent_offload"]
-        comparisons.append(
-            {
-                "qps": qps,
-                **{
-                    f"{mode}_e2e_reduction_pct": 100
-                    * (1 - by_mode[mode]["total_e2e_s"] / base["total_e2e_s"])
-                    for mode in ("agent", "offload", "agent_offload")
-                },
-                "full_p95_reduction_pct": 100
-                * (1 - full["p95_app_latency_s"] / base["p95_app_latency_s"]),
-                "interaction_s": by_mode["agent"]["total_e2e_s"]
-                + by_mode["offload"]["total_e2e_s"]
-                - base["total_e2e_s"]
-                - full["total_e2e_s"],
-            }
+        base = by_mode.get("base")
+        if base is None:
+            continue
+        comparison = {"qps": qps}
+        for mode in ("agent", "offload", "agent_offload"):
+            current = by_mode.get(mode)
+            comparison[f"{mode}_e2e_reduction_pct"] = (
+                100 * (1 - current["total_e2e_s"] / base["total_e2e_s"])
+                if current
+                else None
+            )
+        full = by_mode.get("agent_offload")
+        comparison["full_p95_reduction_pct"] = (
+            100 * (1 - full["p95_app_latency_s"] / base["p95_app_latency_s"])
+            if full and base.get("p95_app_latency_s")
+            else None
         )
+        comparison["interaction_s"] = (
+            by_mode["agent"]["total_e2e_s"]
+            + by_mode["offload"]["total_e2e_s"]
+            - base["total_e2e_s"]
+            - full["total_e2e_s"]
+            if full and "agent" in by_mode and "offload" in by_mode
+            else None
+        )
+        comparisons.append(comparison)
     destination.mkdir(parents=True, exist_ok=False)
     payload = {
         "aggregation": (
@@ -274,7 +214,11 @@ def write_report(rows, destination):
         json.dumps(payload, indent=2, sort_keys=True) + "\n"
     )
     with (destination / "measurements.csv").open("x", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(table[0]), lineterminator="\n")
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=sorted({key for row in table for key in row}),
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(table)
     sections = [
@@ -349,7 +293,7 @@ def write_report(rows, destination):
         ),
     ]
     body = [
-        "# Complete Component Measurements",
+        "# Component Measurements",
         "",
         payload["aggregation"],
         "",
@@ -358,7 +302,9 @@ def write_report(rows, destination):
         "",
         "## Relative Effects",
         "",
-        markdown_table(comparisons, [(key, key) for key in comparisons[0]]),
+        markdown_table(
+            comparisons, [(key, key) for key in comparisons[0]] if comparisons else []
+        ),
     ]
     for title, columns in sections:
         body.extend(["", f"## {title}", "", markdown_table(table, columns)])

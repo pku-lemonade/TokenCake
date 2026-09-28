@@ -12,7 +12,6 @@ from pathlib import Path
 
 import psutil
 
-from .inputs import MODEL
 from .transport import Journal, TaskContext, Transport, write_json
 
 
@@ -35,18 +34,21 @@ def run(spec: dict, output: Path):
         raise RuntimeError("Could not enable benchmark child-process cleanup")
     journal = Journal(output / "journal.jsonl")
     context = TaskContext(**spec["context"])
-    transport = Transport(spec["base_url"], context, journal)
+    transport = Transport(
+        spec["base_url"], context, journal, max_context=spec.get("max_model_len", 32768)
+    )
     actual_start = time.time()
     journal.record("task_start", context=spec["context"], actual_start=actual_start)
     result = {}
     try:
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(str(MODEL), local_files_only=True)
+        model = spec["model_path"]
+        tokenizer = AutoTokenizer.from_pretrained(model)
         if spec["benchmark"] == "bfcl":
             from .bfcl import run as run_bfcl
 
-            prediction = run_bfcl(spec["task"], transport, str(MODEL), tokenizer)
+            prediction = run_bfcl(spec["task"], transport, model, tokenizer)
             result = {"status": "completed", "prediction": prediction}
         else:
             from .mini import run as run_mini
@@ -54,7 +56,7 @@ def run(spec: dict, output: Path):
             prediction = run_mini(
                 spec["task"]["problem_statement"],
                 transport,
-                str(MODEL),
+                model,
                 tokenizer,
                 Path(spec["preset"]),
                 Path(spec["task_directory"]) / "repo",

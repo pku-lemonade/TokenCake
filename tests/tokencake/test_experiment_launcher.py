@@ -4,7 +4,6 @@
 
 import asyncio
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -17,7 +16,7 @@ import aiohttp
 import httpx
 import pytest
 
-from tools.tokencake_experiments.campaign import ROOT, SOURCE
+from tools.tokencake_experiments.campaign import ROOT
 from tools.tokencake_experiments.dataset import Dataset
 from tools.tokencake_experiments.dataset_client import run_application as execute_app
 from vllm.entrypoints.openai.completion.protocol import CompletionRequest
@@ -312,30 +311,14 @@ def test_cli_reads_json_and_writes_complete_analyzable_results(dataset, peer, tm
     assert records["1"]["successor"]["input"].startswith(
         records["1"]["initial_llm_func"]["input"] + "answer\nfixed tool result\n"
     )
-    if SOURCE.exists():
-        checked = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "import json,sys\n"
-                "from tools.tokencake_experiments import analysis\n"
-                "apps = json.load(open(sys.argv[1]))\n"
-                "print(json.dumps(analysis.validate_dag_completion(apps, '', 2)))",
-                str(apps_file),
-            ],
-            cwd=SOURCE,
-            env=os.environ | {"PYTHONPATH": str(SOURCE)},
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        assert checked.returncode == 0, checked.stderr
-        validation = json.loads(checked.stdout)
-        assert validation["passed"]
-        assert validation["terminal_status_counts"] == {
-            "FINISHED_LOCAL": 4,
-            "FINISHED_LENGTH_CAPPED": 4,
-        }
+    from tools.tokencake_experiments.analysis import validate_dag_completion
+
+    validation = validate_dag_completion(apps, "", 2, dataset=dataset)
+    assert validation["passed"]
+    assert validation["terminal_status_counts"] == {
+        "FINISHED_LOCAL": 4,
+        "FINISHED_LENGTH_CAPPED": 4,
+    }
 
 
 def test_failed_branch_cancels_other_branches_before_join(dataset):
